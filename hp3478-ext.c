@@ -118,7 +118,7 @@
  17  | REN   | Remote Enabled     | Controller | PC5  28 | A5
  18  |       | GND DAV            |            |         |
  19  |       | GND NRFD           |            |         |
- 20  |       | GND NDAC           |            |         |
+ 20  |       | GND NDAC           |            |         |
  21  |       | GND IFC            |            |         |
  22  |       | GND SRQ            |            |         |
  23  |       | GND ATN            |            |         |
