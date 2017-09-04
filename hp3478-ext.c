@@ -727,6 +727,7 @@ get_set_opt(const uint8_t *buf, uint8_t len, uint8_t max, uint8_t *opt)
  printf_P(PSTR("OK\r\n"));
 }
 
+static void hp3478_run_test(void);
 static void 
 command_handler(uint8_t command, uint8_t *buf, uint8_t len)
 {
@@ -910,6 +911,12 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
            case 'K':
                    get_set_opt(buf, len, 1, &hp3478_ext_enable);
                    break;
+#if 1
+           case '!':
+                   hp3478_run_test();
+
+                   break;
+#endif
            case 0: 
            case 13: 
                    break;
@@ -1138,7 +1145,7 @@ hp3478_get_status(uint8_t st[5])
 }
 
 static uint8_t
-hp3478_display_reading(struct hp3478_reading *r, uint8_t st, char mode_ind)
+hp3478_display_reading(struct hp3478_reading *r, uint8_t st, char mode_ind, uint8_t flags)
 {
  char display[13];
  char exp_char;
@@ -1184,7 +1191,53 @@ hp3478_display_reading(struct hp3478_reading *r, uint8_t st, char mode_ind)
  }
  memcpy_P(display+i, m, 3);
  if(mode_ind) display[12] = mode_ind;
- return hp3478_display(display, sizeof(display), 0);
+#if 0
+ {
+  static uint8_t a = 0;
+  a++;
+  if(a != 20) return 1;
+  a = 0;
+ }
+#endif
+ return hp3478_display(display, sizeof(display), flags );
+}
+
+static void hp3478_run_test(void)
+{
+ //struct hp3478_reading r;
+ uint8_t sb;
+ uint16_t ts;
+ uint8_t n;
+#if 1
+                   //if(!hp3478_cmd_P(PSTR("A"), 0)) goto fail;
+                   if(!hp3478_cmd_P(PSTR("M20"), 0)) goto fail;
+                   while(!srq());
+                   //if(!hp3478_get_srq_status(&sb)) goto fail;
+                   //if(sb & HP3478_SB_SYNERR) printf_P(PSTR("se0, srq %d\r\n"), (unsigned)srq());
+                   //if(!hp3478_cmd_P(PSTR("K"), 0)) goto fail;
+                   //if(!hp3478_get_srq_status(&sb)) goto fail;
+                   //if(sb & HP3478_SB_SYNERR) printf_P(PSTR("se1, srq %d\r\n"), (unsigned)srq());
+                   ts = msec_get();
+                   n = 0;
+                   while(1) {
+                    if(!hp3478_get_srq_status(&sb)) goto fail;
+                    if(!(sb & HP3478_SB_FRPSRQ)) break;
+                    _delay_ms(0.1);
+                    n++;
+                   }
+                   printf_P(PSTR("w: %u, %u\r\n"), msec_get()-ts, (unsigned)n);
+                   //if(!hp3478_cmd_P(PSTR("K"), 0)) goto fail;
+                   _delay_ms(3);
+                   if(!hp3478_cmd_P(PSTR("M00"), 0)) goto fail;
+#endif
+#if 0
+                   if(!hp3478_cmd_P(PSTR("M20"), 0)) goto fail;
+                   while(!srq());
+                   if(!hp3478_cmd_P(PSTR("M00"), 0)) goto fail;
+#endif
+                   return;
+fail:
+                   printf_P("f\r\n");
 }
 
 static uint8_t hp3478_rel_mode;
@@ -1221,7 +1274,7 @@ hp3478_rel_handle_data(struct hp3478_reading *r)
  }
  out.value = in.value - ref.value;
 
- return hp3478_display_reading(&out, hp3478_rel_mode, '*');
+ return hp3478_display_reading(&out, hp3478_rel_mode, '*', 0);
 }
 
 static uint8_t hp3478_menu_pos;
@@ -1365,7 +1418,7 @@ hp3478_xohm_handle_data(struct hp3478_reading *reading)
   r /= 10;
  }
  rr.value = r;
- if(!hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 0))
+ if(!hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 0, 0))
   return 0;
  return 1;
 }
@@ -1408,6 +1461,172 @@ hp3478_cont_init(void)
  return 1;
 }
 
+#define MINMAX_MIN       1
+#define MINMAX_MAX       2
+#define MINMAX_DISP     12
+#define MINMAX_DISP_NONE 0
+#define MINMAX_DISP_MIN  4
+#define MINMAX_DISP_MAX  8
+static uint8_t minmax_state = 0;
+static struct hp3478_reading minmax_min;
+static struct hp3478_reading minmax_max;
+static uint8_t 
+hp3478_minmax_init(void)
+{
+ uint8_t s[5];
+ if(!hp3478_get_status(s)) return 0;
+ hp3478_saved_state[0] = s[0];
+ if(!hp3478_cmd_P(PSTR("M21"), 0)) return 0;
+ minmax_state = 0;
+ return 1;
+}
+
+static int8_t 
+hp3478_cmp_readings(const struct hp3478_reading *r1, const struct hp3478_reading *r2)
+{
+ int32_t rr1 = r1->value;
+ int32_t rr2 = r2->value;
+ int8_t e1 = r1->exp+r1->dot;
+ int8_t e2 = r2->exp+r2->dot;
+
+ if(rr1 < 0 && rr2 >= 0) return -1;
+ if(rr2 >= 0 && rr1 < 0) return 1;
+ if(e1 >= e2) 
+  while(1) {
+    if(rr1 > rr2) return 1;
+    if(e1 == e2) {
+     if(rr1 == rr2) return 0;
+     return -1;
+    }
+    rr1 *= 10;
+    e1--;
+  }
+ while(1) {
+    if(rr2 > rr1) return -1;
+    if(e1 == e2) {
+     if(rr1 == rr2) return 0;
+     return 1;
+    }
+    rr2 *= 10;
+    e2--;
+ }
+}
+
+static uint8_t 
+hp3478_minmax_detect_key(void)
+{
+ if(!srq()) return 0;
+ if(!hp3478_cmd_P(PSTR("M20"), HP3478_CMD_CONT)) {
+  printf_P(PSTR("M20 failed\r\n"));
+  return 1;
+ }
+ _delay_us(400); /* ~250 uS it takes to clear SRQ after mask update */
+                 //FIXME: measure hp3478 delays:
+                 // K -> SRQ off
+                 // K -> status bits clear (SYN ERR, FP SRQ, DR)
+                 // SPOLL -> SRQ off
+                 // SPOLL -> status bits clear
+                 // DREAD -> SRQ off
+                 // DREAD -> DR bit clear
+                 // M?? -> SRQ off
+                 // M?? -> status bits clear
+                 // SRQ mask update immediately after FPSRQ - why it fails? (see header)
+                 // does this delay affect reading rate?
+                 /* 1) 250us M01<->SRQ (M01 means cmd complete)
+                  * 2) 250us M00<->SRQ
+                    3) K doesn't clear srq for DR
+                    4) minimum srq pulse ~500us -- not true, serial POLL clears immediately
+                    5) read takes ~3.3ms
+                    6) 250us read-start <->SRQ
+                    7) syntax error - same timing as DR
+                    8) for K - same 250us, but command completes faster than M
+                    9) serial poll clears srq immediately, but it won't clear srq,
+                    if it's not active at the moment
+                    10) serial poll clears status bytes, but no reliable
+                    
+                  */
+ if(srq()) {
+  //uint8_t sb;
+//  printf_P(PSTR("still in srq: %d\r\n"), (int)ren());
+//  if(!hp3478_get_srq_status(&sb)) printf_P(PSTR("can't get sb"));
+//  printf_P(PSTR("sb: %x\r\n"), (unsigned)sb);
+  return 1;
+ }
+ return 0;
+}
+
+static uint8_t 
+hp3478_minmax_handle_data(struct hp3478_reading *reading)
+{
+ uint8_t s, r;
+ s = minmax_state;
+
+ r = 0;
+ if(reading->exp != 9) {
+  if((s & MINMAX_MIN) == 0 || hp3478_cmp_readings(reading, &minmax_min) < 0) {
+   minmax_min = *reading;
+   printf_P(PSTR("min: %lu\r\n"), minmax_min.value);
+   r |= MINMAX_MIN;
+  }
+  if((s & MINMAX_MAX) == 0 || hp3478_cmp_readings(reading, &minmax_max) > 0) {
+   minmax_max = *reading;
+   r |= MINMAX_MAX;
+  }
+ }
+ minmax_state = s | r;
+ return r;
+}
+
+static uint8_t 
+hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
+{
+ uint8_t s = minmax_state;
+ struct hp3478_reading d;
+
+ switch(s & MINMAX_DISP) {
+         case MINMAX_DISP_NONE:
+                 if(!key_press) break;
+                 minmax_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MIN;
+                 if((s & MINMAX_MIN) == 0) {
+                  if(!hp3478_display_P(PSTR("NO MIN"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                 } else {
+                  printf_P(PSTR("disp min: %lu\r\n"), minmax_min.value);
+                  d = minmax_min;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '-', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                 }
+                 return 1;
+         case MINMAX_DISP_MIN:
+                 if(!key_press) {
+                  if((r & MINMAX_MIN) == 0) break;
+                  d = minmax_min;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '-', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  return 1;
+                 }
+                 minmax_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MAX;
+                 if((s & MINMAX_MAX) == 0) {
+                  if(!hp3478_display_P(PSTR("NO MAX"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                 } else {
+                  printf_P(PSTR("disp max: %lu\r\n"), minmax_max.value);
+                  d = minmax_max;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                 }
+                 return 1;
+         case MINMAX_DISP_MAX:
+                 if(!key_press) {
+                  if((r & MINMAX_MAX) == 0) break;
+                  printf_P(PSTR("disp max1: %lu\r\n"), minmax_max.value);
+                  d = minmax_max;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  return 1;
+                 }
+                 minmax_state = s & ~MINMAX_DISP;
+                 if(!hp3478_cmd_P("D1", HP3478_CMD_CONT)) return 0;
+                 return 1;
+ }
+ /* nothing to do */
+ return 1;
+}
+
 #define HP3478_REINIT do { \
  state = HP3478_INIT; \
  return 250; \
@@ -1424,6 +1643,7 @@ hp3478a_handler(uint8_t ev)
 #define HP3478_MENU    5
 #define HP3478_XOHM    6
 #define HP3478_CONT    8
+#define HP3478_MMAX    9
  static uint8_t state = HP3478_INIT;
  uint8_t sb;
  uint8_t st[5];
@@ -1464,16 +1684,29 @@ hp3478a_handler(uint8_t ev)
                    printf_P(PSTR("idle: get reading failed\r\n"));
                    HP3478_REINIT;
                   }
+#if 0
+                 {uint16_t ts; uint16_t n; uint8_t sb1;
+                   ts = msec_get();
+                   n = 0;
+                   while(1) {
+                    if(!hp3478_get_srq_status(&sb1)) HP3478_REINIT;
+                    if(!(sb1 & HP3478_SB_FRPSRQ)) break;
+                    _delay_ms(0.1);
+                    n++;
+                   }
+                   printf_P(PSTR("w: %u, %u\r\n"), msec_get()-ts, (unsigned)n);
+                 }
+#else
                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
+#endif
                  if(!hp3478_get_status(st)) HP3478_REINIT;
-                 printf_P(PSTR("idle: status %x %x\r\n"), (unsigned)sb, (unsigned)st[1]);
+                 printf_P(PSTR("idle: goto rel %x %x\r\n"), (unsigned)sb, (unsigned)st[1]);
                  if((st[1] & HP3478_ST_INT_TRIGGER) == 0) {
                   if((sb & HP3478_SB_DREADY) == 0) {
                    if(!hp3478_cmd_P(PSTR("M21"), 0)) HP3478_REINIT;
                    state = HP3478_RELS;
                    return 1800;
                   }
-                  printf_P(PSTR("idle: goto rel\r\n"));
                   if(!hp3478_rel_start(st[0], &reading)) HP3478_REINIT;
                   state = HP3478_RELA;
                   return 0xffff;
@@ -1508,6 +1741,11 @@ hp3478a_handler(uint8_t ev)
                                                  printf_P(PSTR("menu: xohm\r\n"));
                                                  if(!hp3478_xohm_init()) HP3478_REINIT;
                                                  return 0xffff;
+                         case HP3478_MENU_MINMAX: 
+                                                 state = HP3478_MMAX;
+                                                 printf_P(PSTR("menu: minmax\r\n"));
+                                                 if(!hp3478_minmax_init()) HP3478_REINIT;
+                                                 return 0xffff;
                          case HP3478_MENU_DONE: 
                                                  state = HP3478_IDLE;
                                                  printf_P(PSTR("menu: idle\r\n"));
@@ -1529,13 +1767,13 @@ hp3478a_handler(uint8_t ev)
                  if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
                  if((sb & HP3478_SB_FRPSRQ) != 0 || (ev & EV_TIMEOUT) != 0) {
                   if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT;
-                  printf_P("rels: goto idle %x %x\r\n", (unsigned)sb, (unsigned)ev);
+                  printf_P(PSTR("rels: goto idle %x %x\r\n"), (unsigned)sb, (unsigned)ev);
                   state = HP3478_IDLE;
                   return 0xffff;
                  }
                  if((sb & HP3478_SB_DREADY) == 0) return TIMEOUT_CONT;
                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                 if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
+                 //if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
                  if(!hp3478_get_status(st)) HP3478_REINIT;
                  if(!hp3478_rel_start(st[0], &reading)) HP3478_REINIT;
                  state = HP3478_RELA;
@@ -1550,13 +1788,14 @@ hp3478a_handler(uint8_t ev)
                  if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
                  if(sb & HP3478_SB_FRPSRQ) {
                   // TODO: also detect Local button?
+                  printf_P(PSTR("rel: goto idle\r\n"));
                   if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT;
                   state = HP3478_IDLE;
                   return 0xffff;
                  }
                  if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
+                  //if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
                   if(!hp3478_rel_handle_data(&reading)) { //TODO: pass status bytes, so it knows that nothing's changed
                    if(!hp3478_cmd_P(PSTR("M20D1"), 0)) HP3478_REINIT;
                    state = HP3478_IDLE;
@@ -1599,7 +1838,7 @@ hp3478a_handler(uint8_t ev)
                 }
                 if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                  if(!hp3478_cmd_P(PSTR("K"), 0)) HP3478_REINIT;
+                  //if(!hp3478_cmd_P(PSTR("K"), 0)) HP3478_REINIT;
                   if(reading.value < 100000) {
                    if(!buzzer) {
                     if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT;
@@ -1609,6 +1848,30 @@ hp3478a_handler(uint8_t ev)
                    if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) HP3478_REINIT;
                    beep(0);
                   }
+                }
+         case HP3478_MMAX:
+                if(ev & EV_EXT_DISABLE) {
+                  hp3478_cmd_P(PSTR("M00D1"), 0);
+                  state = HP3478_DISA;
+                  return 0xffff;
+                }
+                { uint8_t minmax_ev;
+                  uint8_t k;
+                  k = hp3478_minmax_detect_key();
+
+                 if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
+                 if(k && (sb&HP3478_SB_FRPSRQ) == 0) {
+                   if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT;
+                   state = HP3478_IDLE;
+                   return 0xffff;
+                 }
+                 minmax_ev = 0;
+                 if(sb & HP3478_SB_DREADY) {
+                   if(!hp3478_get_reading(&reading, HP3478_CMD_CONT)) HP3478_REINIT;
+                   minmax_ev = hp3478_minmax_handle_data(&reading);
+                 }
+                 if(!hp3478_minmax_display_data(minmax_ev, sb&HP3478_SB_FRPSRQ)) HP3478_REINIT;
+                 if(!hp3478_cmd_P(PSTR("M21"), HP3478_CMD_CONT)) HP3478_REINIT; /* restore mask after minmax_detect_key */
                 }
 
                 return 0xffff;
