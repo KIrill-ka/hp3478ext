@@ -131,6 +131,9 @@
  22  |       | GND SRQ            |            |         |
  23  |       | GND ATN            |            |         |
  24  |       | GND data           |            |         |
+
+     | LED   |                    | OUT        | PB5     |
+     |BUZZER | Buzzer PWM (OC1B)  | OUT        | PB2     |
 */
 
 #define EOI  _BV(PB3)
