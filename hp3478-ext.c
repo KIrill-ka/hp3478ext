@@ -26,13 +26,7 @@
 /*
  TODO list
 
- - hp3478_get_srq_status seems to clear the GPIB status byte, but
-   after some delay. Need to investigate this. For now status is explicitly
-   cleared with hp3478_clear_srq.
- - hp3478_rel_start fails to update SRQ mask if status byte is not
-   cleared (hp3478_clear_srq). Maybe the problem is not the status byte.
  - Display 0 with O?
- - Display the right number of digits in hp3478_rel_handle_data.
  - Allow to save some settings in eeprom (addresses, echo, etc.).
  */
 
@@ -43,6 +37,12 @@
    have been accepted by GPIB interface, it doesn't mean that the command will
    be processed. As a workaround, dummy <LF> bytes are sent so gpib_transmit waits 
    for RFD after the command.
+ - There are different ways to clear SRQ signal and status bits, and they are all
+   have some "features".
+   1) K and M commands deactivate SRQ ~250uS after the command completes.
+   2) Read deactivates SRQ ~250uS after it's started.
+   3) Serial poll clears SRQ immediately, but status bits are left for some time.
+   4) K does not clear status bits immediately, but faster and more reliable than serial poll.
 */
 
 #define CMD_HISTORY_SIZE 8
@@ -94,7 +94,6 @@
 #define PORT(X) CAT(PORT, X)
 #define DDR(X) CAT(DDR, X)
 #define PIN(X) CAT(PIN, X)
-
 
 /* configuration constants & defaults */
 #define GPIB_MY_DEFAULT_ADDRESS 21
@@ -458,16 +457,14 @@ ISR(TIMER0_OVF_vect) {
   }
 }
 
-//volatile uint16_t srq_count;
 uint16_t srq_prev;
 ISR(PCINT1_vect) {
  uint8_t s = srq();
  if(s != srq_prev) {
   // FIXME: added some filtering. Spurious SRQS are probably caused by capacitive coupling in long ribbon cable.
-  gpib_srq_interrupt = 1; // FIXME: do we need an interrupt? Checking srq in main() might work better.
+  gpib_srq_interrupt = 1;
   srq_prev = s;
  }
- //srq_count++; // FIXME: remove
 }
 
 static inline uint16_t
@@ -727,7 +724,6 @@ get_set_opt(const uint8_t *buf, uint8_t len, uint8_t max, uint8_t *opt)
  printf_P(PSTR("OK\r\n"));
 }
 
-static void hp3478_run_test(void);
 static void 
 command_handler(uint8_t command, uint8_t *buf, uint8_t len)
 {
@@ -911,12 +907,6 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
            case 'K':
                    get_set_opt(buf, len, 1, &hp3478_ext_enable);
                    break;
-#if 1
-           case '!':
-                   hp3478_run_test();
-
-                   break;
-#endif
            case 0: 
            case 13: 
                    break;
@@ -1202,44 +1192,6 @@ hp3478_display_reading(struct hp3478_reading *r, uint8_t st, char mode_ind, uint
  return hp3478_display(display, sizeof(display), flags );
 }
 
-static void hp3478_run_test(void)
-{
- //struct hp3478_reading r;
- uint8_t sb;
- uint16_t ts;
- uint8_t n;
-#if 1
-                   //if(!hp3478_cmd_P(PSTR("A"), 0)) goto fail;
-                   if(!hp3478_cmd_P(PSTR("M20"), 0)) goto fail;
-                   while(!srq());
-                   //if(!hp3478_get_srq_status(&sb)) goto fail;
-                   //if(sb & HP3478_SB_SYNERR) printf_P(PSTR("se0, srq %d\r\n"), (unsigned)srq());
-                   //if(!hp3478_cmd_P(PSTR("K"), 0)) goto fail;
-                   //if(!hp3478_get_srq_status(&sb)) goto fail;
-                   //if(sb & HP3478_SB_SYNERR) printf_P(PSTR("se1, srq %d\r\n"), (unsigned)srq());
-                   ts = msec_get();
-                   n = 0;
-                   while(1) {
-                    if(!hp3478_get_srq_status(&sb)) goto fail;
-                    if(!(sb & HP3478_SB_FRPSRQ)) break;
-                    _delay_ms(0.1);
-                    n++;
-                   }
-                   printf_P(PSTR("w: %u, %u\r\n"), msec_get()-ts, (unsigned)n);
-                   //if(!hp3478_cmd_P(PSTR("K"), 0)) goto fail;
-                   _delay_ms(3);
-                   if(!hp3478_cmd_P(PSTR("M00"), 0)) goto fail;
-#endif
-#if 0
-                   if(!hp3478_cmd_P(PSTR("M20"), 0)) goto fail;
-                   while(!srq());
-                   if(!hp3478_cmd_P(PSTR("M00"), 0)) goto fail;
-#endif
-                   return;
-fail:
-                   printf_P("f\r\n");
-}
-
 static uint8_t hp3478_rel_mode;
 static struct hp3478_reading hp3478_rel_ref;
 static uint8_t
@@ -1521,37 +1473,7 @@ hp3478_minmax_detect_key(void)
   return 1;
  }
  _delay_us(400); /* ~250 uS it takes to clear SRQ after mask update */
-                 //FIXME: measure hp3478 delays:
-                 // K -> SRQ off
-                 // K -> status bits clear (SYN ERR, FP SRQ, DR)
-                 // SPOLL -> SRQ off
-                 // SPOLL -> status bits clear
-                 // DREAD -> SRQ off
-                 // DREAD -> DR bit clear
-                 // M?? -> SRQ off
-                 // M?? -> status bits clear
-                 // SRQ mask update immediately after FPSRQ - why it fails? (see header)
-                 // does this delay affect reading rate?
-                 /* 1) 250us M01<->SRQ (M01 means cmd complete)
-                  * 2) 250us M00<->SRQ
-                    3) K doesn't clear srq for DR
-                    4) minimum srq pulse ~500us -- not true, serial POLL clears immediately
-                    5) read takes ~3.3ms
-                    6) 250us read-start <->SRQ
-                    7) syntax error - same timing as DR
-                    8) for K - same 250us, but command completes faster than M
-                    9) serial poll clears srq immediately, but it won't clear srq,
-                    if it's not active at the moment
-                    10) serial poll clears status bytes, but no reliable
-                    
-                  */
- if(srq()) {
-  //uint8_t sb;
-//  printf_P(PSTR("still in srq: %d\r\n"), (int)ren());
-//  if(!hp3478_get_srq_status(&sb)) printf_P(PSTR("can't get sb"));
-//  printf_P(PSTR("sb: %x\r\n"), (unsigned)sb);
-  return 1;
- }
+ if(srq()) return 1;
  return 0;
 }
 
@@ -1565,7 +1487,6 @@ hp3478_minmax_handle_data(struct hp3478_reading *reading)
  if(reading->exp != 9) {
   if((s & MINMAX_MIN) == 0 || hp3478_cmp_readings(reading, &minmax_min) < 0) {
    minmax_min = *reading;
-   printf_P(PSTR("min: %lu\r\n"), minmax_min.value);
    r |= MINMAX_MIN;
   }
   if((s & MINMAX_MAX) == 0 || hp3478_cmp_readings(reading, &minmax_max) > 0) {
@@ -1590,7 +1511,6 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
                  if((s & MINMAX_MIN) == 0) {
                   if(!hp3478_display_P(PSTR("NO MIN"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
                  } else {
-                  printf_P(PSTR("disp min: %lu\r\n"), minmax_min.value);
                   d = minmax_min;
                   if(!hp3478_display_reading(&d, hp3478_saved_state[0], '-', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
                  }
@@ -1606,7 +1526,6 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
                  if((s & MINMAX_MAX) == 0) {
                   if(!hp3478_display_P(PSTR("NO MAX"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
                  } else {
-                  printf_P(PSTR("disp max: %lu\r\n"), minmax_max.value);
                   d = minmax_max;
                   if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
                  }
@@ -1614,7 +1533,6 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
          case MINMAX_DISP_MAX:
                  if(!key_press) {
                   if((r & MINMAX_MAX) == 0) break;
-                  printf_P(PSTR("disp max1: %lu\r\n"), minmax_max.value);
                   d = minmax_max;
                   if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
                   return 1;
@@ -1684,21 +1602,10 @@ hp3478a_handler(uint8_t ev)
                    printf_P(PSTR("idle: get reading failed\r\n"));
                    HP3478_REINIT;
                   }
-#if 0
-                 {uint16_t ts; uint16_t n; uint8_t sb1;
-                   ts = msec_get();
-                   n = 0;
-                   while(1) {
-                    if(!hp3478_get_srq_status(&sb1)) HP3478_REINIT;
-                    if(!(sb1 & HP3478_SB_FRPSRQ)) break;
-                    _delay_ms(0.1);
-                    n++;
-                   }
-                   printf_P(PSTR("w: %u, %u\r\n"), msec_get()-ts, (unsigned)n);
-                 }
-#else
+
+                 /* K is required, because serial poll doesn't clear status bits
+                    immediately. Otherwise next SRQ still may be seen as FP SRQ. */  
                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
-#endif
                  if(!hp3478_get_status(st)) HP3478_REINIT;
                  printf_P(PSTR("idle: goto rel %x %x\r\n"), (unsigned)sb, (unsigned)st[1]);
                  if((st[1] & HP3478_ST_INT_TRIGGER) == 0) {
@@ -1773,7 +1680,6 @@ hp3478a_handler(uint8_t ev)
                  }
                  if((sb & HP3478_SB_DREADY) == 0) return TIMEOUT_CONT;
                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                 //if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
                  if(!hp3478_get_status(st)) HP3478_REINIT;
                  if(!hp3478_rel_start(st[0], &reading)) HP3478_REINIT;
                  state = HP3478_RELA;
@@ -1795,7 +1701,6 @@ hp3478a_handler(uint8_t ev)
                  }
                  if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                  //if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
                   if(!hp3478_rel_handle_data(&reading)) { //TODO: pass status bytes, so it knows that nothing's changed
                    if(!hp3478_cmd_P(PSTR("M20D1"), 0)) HP3478_REINIT;
                    state = HP3478_IDLE;
@@ -1838,7 +1743,6 @@ hp3478a_handler(uint8_t ev)
                 }
                 if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                  //if(!hp3478_cmd_P(PSTR("K"), 0)) HP3478_REINIT;
                   if(reading.value < 100000) {
                    if(!buzzer) {
                     if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT;
@@ -1918,8 +1822,6 @@ void main(void)
 
   ext_state = !hp3478_ext_enable;
   while (1) {
-
-
    // FIXME: ignore some commands so not to interrupt "EXT" mode
    if(command) command_handler(command, buf, bufPos);
    if(command) line_edit(0, buf, &bufPos); /* prepare for next command */
@@ -1934,7 +1836,6 @@ void main(void)
     if(gpib_srq_interrupt) {
      gpib_srq_interrupt = 0;
      if(srq()) ev |= EV_SRQ;
-     //printf_P(PSTR("SRQ: %u %u\r\n"), (unsigned) srq(), srq_count);
     }
     if(timeout != TIMEOUT_INF && timeout_ts - msec_get() <= 0) ev |= EV_TIMEOUT;
    } while(!ev);
