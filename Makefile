@@ -23,7 +23,7 @@ CFLAGS=  $(OFLAG) -g -Wall -mmcu=$(MCU) -ffreestanding -Wa,-ahlms=$(<:.c=.lst)
 	avr-objcopy -O binary $< $@
 
 .out.hex:
-	avr-objcopy -O ihex $< $@
+	avr-objcopy -R .eeprom -R .fuse -R .lock -O ihex $< $@
 
 all:	$(NAME).hex
 
@@ -31,7 +31,7 @@ OBJS = $(NAME).o uart.o
 
 $(NAME).out: $(OBJS)
 	$(CC) -o $(NAME).out $(CFLAGS) $(LDFLAGS) $(OBJS) $(LDLIBS)
-	avr-size $(NAME).out
+	avr-size -A $(NAME).out
 
 clean:
 	rm -f *.out *.bin *.hex *.s *.o
