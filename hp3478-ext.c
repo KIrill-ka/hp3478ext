@@ -28,7 +28,7 @@
  TODO list
 
  - Display 0 with O?
- - Recover after test/reset 
+ - RTD temperature measurement
  */
 
 /* 
@@ -1486,7 +1486,7 @@ static uint8_t
 hp3478_cont_fini(void)
 {
  uint8_t s1, s2;
- uint8_t cmd[8];
+ uint8_t cmd[6];
 
  s1 = hp3478_saved_state[0];
  s2 = hp3478_saved_state[1];
@@ -1503,8 +1503,6 @@ hp3478_cont_fini(void)
  cmd[4] = 'Z';
  if(s2 & HP3478_ST_AUTOZERO) cmd[5] = '1';
  else cmd[5] = '0';
- cmd[6] = 'D';
- cmd[7] = '1';
  return hp3478_cmd(cmd, sizeof(cmd), 0);
 }
 
@@ -1660,6 +1658,7 @@ hp3478_autohold_start(void)
  ahld_n_stable = 0;
  if(!hp3478_get_status(s)) return 0;
  hp3478_saved_state[0] = s[0];
+ hp3478_saved_state[1] = s[1];
  if(!hp3478_cmd_P(PSTR("M21T1"), 0)) return 0;
  return 1;
 }
@@ -1704,20 +1703,37 @@ hp3478_autohold_process(uint8_t locked, uint8_t sb)
 {
  struct hp3478_reading r;
  uint8_t nstab;
- uint8_t st = hp3478_saved_state[0];
+ uint8_t st;
  uint8_t ret;
 
  if(!(sb & HP3478_SB_DREADY)) return AHLD_NOP;
  if(!hp3478_get_reading(&r, HP3478_CMD_CONT)) return AHLD_ERROR;
 
-               
  nstab = ahld_n_stable;
- if(nstab != 0 && abs(r.value - minmax_min.value) < HP3478_AUTOHOLD_STABLE_D 
-               && r.exp != 9 
-               && r.exp == minmax_min.exp 
-               && r.dot == minmax_min.dot
-               && abs(r.value) >= hp3478_autohold_min_value(st)
-               ) {
+ ret = AHLD_NOP;
+ st = hp3478_saved_state[0];
+
+ if(r.exp != minmax_min.exp || r.dot != minmax_min.dot || r.exp == 9) {
+  uint8_t s[5];
+  uint8_t m;
+  uint8_t st1 = hp3478_saved_state[1];
+
+  if(!hp3478_get_status(s)) return AHLD_ERROR;
+  m = HP3478_ST_FUNC|HP3478_ST_N_DIGITS;
+  if((st1 & HP3478_ST_AUTORANGE) == 0) m |= HP3478_ST_RANGE;
+  if(((s[0] ^ st) & m) != 0
+     || ((s[1] ^ st1) & HP3478_ST_AUTORANGE) != 0) {
+    if(locked) {
+     ret = AHLD_UNLOCK;
+     locked = 0;
+    }
+    hp3478_saved_state[1] = s[1];
+  }
+  hp3478_saved_state[0] = s[0];
+  st = s[0];
+ } else if(nstab != 0 
+           && abs(r.value - minmax_min.value) < HP3478_AUTOHOLD_STABLE_D 
+           && abs(r.value) >= hp3478_autohold_min_value(st)) {
   if(++nstab == HP3478_AUTOHOLD_STABLE_N) {
 #ifdef AUTO_HOLD_NO_RESUME
    if(!hp3478_cmd_P(PSTR("T4"), 0)) return AHLD_ERROR;
@@ -1737,21 +1753,6 @@ hp3478_autohold_process(uint8_t locked, uint8_t sb)
   }
   ahld_n_stable = nstab;
   return AHLD_NOP;
- }
-
- ret = AHLD_NOP;
- 
- if(r.exp != minmax_min.exp || r.dot != minmax_min.dot) {
-  uint8_t s[5];
-  if(!hp3478_get_status(s)) return AHLD_ERROR;
-  if((s[0] ^ st) & (HP3478_ST_FUNC|HP3478_ST_N_DIGITS)) { /* TODO: in manual range mode, also check range */
-    if(locked) {
-     ret = AHLD_UNLOCK;
-     locked = 0;
-    }
-  }
-  hp3478_saved_state[0] = s[0];
-  st = s[0];
  }
 
  minmax_min = r;
@@ -1790,37 +1791,42 @@ hp3478a_handler(uint8_t ev)
  uint8_t sb;
  uint8_t st[5];
  struct hp3478_reading reading;
- switch(state) {
-         case HP3478_DISA:
-                 if((ev & EV_EXT_ENABLE) == 0) return 0xffff;
-                 state = HP3478_INIT;
-         case HP3478_INIT:
-                 if(ev & EV_EXT_DISABLE) {
-                  state = HP3478_DISA;
-                  return 0xffff;
-                 }
-                 if(hp3478_cmd_P(PSTR("KM20"), 0)) {
-                  printf_P(PSTR("init: ok\r\n"));
-                  state = HP3478_IDLE;
-                  return 0xffff;
-                 }
-                 return 2000; /* retry initialization after 2 sec */
 
-         case HP3478_IDLE:
-                 if(ev & EV_EXT_DISABLE) {
-                   hp3478_cmd_P(PSTR("M00"), 0);
-                   state = HP3478_DISA;
-                   return 0xffff;
-                 }
-                 if(!hp3478_get_srq_status(&sb)) {
-                  printf_P(PSTR("idle: can't get status\r\n"));
-                  HP3478_REINIT;
-                 }
-                 if((sb & HP3478_SB_FRPSRQ) == 0) {
-                  if(!hp3478_cmd_P(PSTR("K"), 0)) HP3478_REINIT;
-                  printf_P(PSTR("idle: unexpected ev %x %x\r\n"), (unsigned)ev, (unsigned)sb);
-                  return 0xffff;
-                 }
+ if(state == HP3478_DISA) {
+  if((ev & EV_EXT_ENABLE) == 0) return TIMEOUT_INF;
+  state = HP3478_INIT;
+ }
+
+ if((ev & EV_EXT_DISABLE) != 0) {
+  switch(state) {
+          case HP3478_AHLL:
+          case HP3478_AHLD:
+                  beep(0);
+                  hp3478_cmd_P(PSTR("M00D1T1"), 0);
+                  break;
+         
+          case HP3478_CONT:
+                  hp3478_cont_fini();
+          default:
+                  hp3478_cmd_P(PSTR("M00D1"), 0);
+  }
+                  
+  state = HP3478_DISA;
+  return TIMEOUT_INF;
+ }
+
+ if(state != HP3478_INIT && state != HP3478_MENU && state != HP3478_MMAX) {
+  if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
+  if(sb & HP3478_SB_PWRSRQ) HP3478_REINIT;
+  if(sb & HP3478_SB_FRPSRQ) {
+   switch(state) {
+          case HP3478_AHLL:
+          case HP3478_AHLD:
+                  beep(0);
+                  hp3478_cmd_P(PSTR("KM20D1T1"), 0);
+                  break;
+
+          case HP3478_IDLE:
                  if((sb & HP3478_SB_DREADY) != 0)
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) {
                    printf_P(PSTR("idle: get reading failed\r\n"));
@@ -1855,12 +1861,32 @@ hp3478a_handler(uint8_t ev)
                  state = HP3478_MENU;
                  return 100;
 
-         case HP3478_MENU:
-                 if(ev & EV_EXT_DISABLE) {
-                   hp3478_cmd_P(PSTR("M00"), 0);
-                   state = HP3478_DISA;
-                   return 0xffff;
+          case HP3478_CONT:
+                  hp3478_cont_fini();
+
+          default:
+                  hp3478_cmd_P(PSTR("KM20D1"), 0);
+   }
+   state = HP3478_IDLE;
+   return TIMEOUT_INF;
+  }
+ }
+
+ switch(state) {
+         case HP3478_INIT:
+                 if(hp3478_cmd_P(PSTR("KM20"), 0)) {
+                  printf_P(PSTR("init: ok\r\n"));
+                  state = HP3478_IDLE;
+                  return 0xffff;
                  }
+                 return 2000; /* retry initialization after 2 sec */
+
+         case HP3478_IDLE:
+                 if(!hp3478_cmd_P(PSTR("K"), 0)) HP3478_REINIT;
+                 printf_P(PSTR("idle: unexpected ev %x %x\r\n"), (unsigned)ev, (unsigned)sb);
+                 return TIMEOUT_INF;
+
+         case HP3478_MENU:
                  switch(hp3478_menu_process(ev)) {
                          default:
                                                  printf_P(PSTR("menu: unknown\r\n"));
@@ -1899,19 +1925,6 @@ hp3478a_handler(uint8_t ev)
 
 
          case HP3478_RELS:
-                 if(ev & EV_EXT_DISABLE) {
-                   hp3478_cmd_P(PSTR("M00"), 0);
-                   state = HP3478_DISA;
-                   return 0xffff;
-                 }
-
-                 if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
-                 if((sb & HP3478_SB_FRPSRQ) != 0) {
-                  if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT;
-                  printf_P(PSTR("rels: goto idle %x %x\r\n"), (unsigned)sb, (unsigned)ev);
-                  state = HP3478_IDLE;
-                  return 0xffff;
-                 }
                  if((ev & EV_TIMEOUT) != 0) {
                   if(!hp3478_autohold_start()) HP3478_REINIT;
                   state = HP3478_AHLD;
@@ -1931,19 +1944,6 @@ hp3478a_handler(uint8_t ev)
 
          case HP3478_AHLD:
          case HP3478_AHLL:
-                 if(ev & EV_EXT_DISABLE) {
-                  beep(0);
-                  hp3478_cmd_P(PSTR("M00D1T1"), 0);
-                  state = HP3478_DISA;
-                  return TIMEOUT_INF;
-                 }
-                 if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
-                 if(sb & HP3478_SB_FRPSRQ) {
-                  beep(0);
-                  if(!hp3478_cmd_P(PSTR("KM20D1T1"), 0)) HP3478_REINIT;
-                  state = HP3478_IDLE;
-                  return TIMEOUT_INF;
-                 }
                  switch(hp3478_autohold_process(state == HP3478_AHLL, sb)) {
                          case AHLD_ERROR:        beep(0);
                                                  HP3478_REINIT;
@@ -1966,19 +1966,7 @@ hp3478a_handler(uint8_t ev)
                                                  return TIMEOUT_INF;
                  }
          case HP3478_RELA:
-                 if(ev & EV_EXT_DISABLE) {
-                   hp3478_cmd_P(PSTR("M00D1"), 0);
-                   state = HP3478_DISA;
-                   return 0xffff;
-                 }
-                 if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
-                 if(sb & HP3478_SB_FRPSRQ) {
                   // TODO: also detect Local button?
-                  printf_P(PSTR("rel: goto idle\r\n"));
-                  if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT;
-                  state = HP3478_IDLE;
-                  return 0xffff;
-                 }
                  if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
                   if(!hp3478_rel_handle_data(&reading)) { //TODO: pass status bytes, so it knows that nothing's changed
@@ -1989,17 +1977,6 @@ hp3478a_handler(uint8_t ev)
                  } 
                  return 0xffff; /* what was it? */
          case HP3478_XOHM:
-                 if(ev & EV_EXT_DISABLE) {
-                   hp3478_cmd_P(PSTR("M00D1"), 0);
-                   state = HP3478_DISA;
-                   return 0xffff;
-                 }
-                 if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
-                 if(sb & HP3478_SB_FRPSRQ) {
-                   if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT;
-                   state = HP3478_IDLE;
-                   return 0xffff;
-                 }
                 if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
                   if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
@@ -2008,19 +1985,6 @@ hp3478a_handler(uint8_t ev)
                 }
                 return 0xffff;
          case HP3478_CONT:
-                if(ev & EV_EXT_DISABLE) {
-                  hp3478_cont_fini();
-                  hp3478_cmd_P(PSTR("M00"), 0);
-                  state = HP3478_DISA;
-                  return 0xffff;
-                }
-                if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
-                if(sb & HP3478_SB_FRPSRQ) {
-                  if(!hp3478_cont_fini()) HP3478_REINIT;
-                  if(!hp3478_cmd_P(PSTR("KM20"), 0)) HP3478_REINIT;
-                  state = HP3478_IDLE;
-                  return 0xffff;
-                }
                 if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
                   if(reading.value < 100000) {
@@ -2033,12 +1997,8 @@ hp3478a_handler(uint8_t ev)
                    beep(0);
                   }
                 }
+                return TIMEOUT_INF;
          case HP3478_MMAX:
-                if(ev & EV_EXT_DISABLE) {
-                  hp3478_cmd_P(PSTR("M00D1"), 0);
-                  state = HP3478_DISA;
-                  return 0xffff;
-                }
                 { uint8_t minmax_ev;
                   uint8_t k;
                   k = hp3478_minmax_detect_key();
