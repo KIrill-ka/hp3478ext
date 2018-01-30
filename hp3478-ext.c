@@ -1261,6 +1261,7 @@ hp3478_display_reading(struct hp3478_reading *r, uint8_t st, char mode_ind, uint
   r->value /= 10;
   if(i == r->dot+2) display[--i] = '.';
  }
+
  switch(r->exp) {
    case -3: exp_char = 'M'; break;
    case 0: exp_char = ' '; break;
@@ -1274,7 +1275,9 @@ display_units:
  i = 8;
  if(!mode_ind) display[i++] = ' ';
  display[i++] = exp_char;
- switch(f) {
+ if(mode_ind == 'd') m = PSTR("V  ");
+ else if(mode_ind == 'c') m = PSTR("C  ");
+ else switch(f) {
          case HP3478_ST_FUNC_DCV: m = PSTR("VDC"); break;
          case HP3478_ST_FUNC_ACV: m = PSTR("VAC"); break;
          case HP3478_ST_FUNC_2WOHM:
@@ -1284,7 +1287,7 @@ display_units:
          default: m = PSTR("???"); 
  }
  memcpy_P(display+i, m, 3);
- if(mode_ind) display[12] = mode_ind;
+ if(mode_ind) display[12] = mode_ind < 'a' ? mode_ind : ' ';
 #if 0
  {
   static uint8_t a = 0;
@@ -1340,9 +1343,13 @@ static uint8_t hp3478_menu_pos;
 #define HP3478_MENU_WAIT    4
 #define HP3478_MENU_XOHM    5
 #define HP3478_MENU_BEEP    6 /* continuity test */
-#define HP3478_MENU_BEEP1   7 /* continuity test, different menu path */
+#define HP3478_MENU_XOHM_BEEP   7 /* continuity test, different menu path */
 #define HP3478_MENU_MINMAX  8
 #define HP3478_MENU_AUTOHOLD 9
+#define HP3478_MENU_OHM_MINMAX  10
+#define HP3478_MENU_OHM_AUTOHOLD 11
+#define HP3478_MENU_TEMP 12
+#define HP3478_MENU_DIODE 13
 
 static uint8_t hp3478_btn_detect_stage;
 static uint8_t 
@@ -1351,20 +1358,26 @@ hp3478_menu_next(uint8_t st1, struct hp3478_reading *r, uint8_t pos)
  switch(pos) {
          case 0:
                  if((st1 & HP3478_ST_FUNC) == HP3478_ST_FUNC_2WOHM) {
-                  if(r->exp == 9) return HP3478_MENU_BEEP1;
+                  if(r->exp == 9) return HP3478_MENU_XOHM_BEEP;
                   return HP3478_MENU_BEEP;
                  } 
                  if((st1 & HP3478_ST_FUNC) == HP3478_ST_FUNC_XOHM) 
                   return HP3478_MENU_XOHM;
                  return HP3478_MENU_AUTOHOLD;
-         case HP3478_MENU_XOHM:
-                 return HP3478_MENU_AUTOHOLD;
-         case HP3478_MENU_BEEP1:
+         case HP3478_MENU_XOHM_BEEP:
                  return HP3478_MENU_XOHM;
+         case HP3478_MENU_XOHM:
          case HP3478_MENU_BEEP:
-                 return HP3478_MENU_AUTOHOLD;
+                 return HP3478_MENU_DIODE;
+         case HP3478_MENU_DIODE:
+                 return HP3478_MENU_OHM_AUTOHOLD;
+         case HP3478_MENU_OHM_AUTOHOLD:
+                 return HP3478_MENU_OHM_MINMAX;
+         case HP3478_MENU_OHM_MINMAX:
+                 return HP3478_MENU_TEMP;
          case HP3478_MENU_AUTOHOLD:
                  return HP3478_MENU_MINMAX;
+         case HP3478_MENU_TEMP:
          case HP3478_MENU_MINMAX:
                  return HP3478_MENU_DONE;
  }
@@ -1375,11 +1388,15 @@ hp3478_menu_show(uint8_t pos)
 {
  const char *s;
  switch(pos) {
+         case HP3478_MENU_OHM_MINMAX: s = PSTR("M: MINMAX"); break;
          case HP3478_MENU_MINMAX: s = PSTR("M: MINMAX"); break;
-         case HP3478_MENU_BEEP1:
+         case HP3478_MENU_XOHM_BEEP:
          case HP3478_MENU_BEEP: s = PSTR("M: CONT"); break;
          case HP3478_MENU_XOHM: s = PSTR("M: XOHM"); break;
+         case HP3478_MENU_OHM_AUTOHOLD:
          case HP3478_MENU_AUTOHOLD: s = PSTR("M: AUTOHOLD"); break;
+         case HP3478_MENU_DIODE: s = PSTR("M: DIODE"); break;
+         case HP3478_MENU_TEMP: s = PSTR("M: TEMP"); break;
  }
  return hp3478_display_P(s, HP3478_DISP_HIDE_ANNUNCIATORS|HP3478_CMD_CONT);
 }
@@ -1477,10 +1494,80 @@ hp3478_xohm_handle_data(struct hp3478_reading *reading)
   r /= 10;
  }
  rr.value = r;
- if(!hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 0, 0))
-  return 0;
+ return hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 0, 0);
+}
+
+static uint8_t minmax_state = 0;
+static uint8_t 
+hp3478_diode_init(void)
+{
+ uint8_t s[5];
+ if(!hp3478_get_status(s)) return 0;
+ hp3478_saved_state[0] = s[0];
+ hp3478_saved_state[1] = s[1];
+ if(!hp3478_cmd_P(PSTR("R3M21"), 0)) return 0;
+ minmax_state = 1;
  return 1;
 }
+
+static uint8_t 
+hp3478_diode_handle_data(struct hp3478_reading *reading)
+{
+ if(reading->exp == 9) {
+  if(minmax_state) {
+   minmax_state = 0;
+   if(!hp3478_display_P(PSTR("     >3 V"), HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+  }
+  return 1;
+ }
+ minmax_state = 1;
+ reading->exp = 0;
+ return hp3478_display_reading(reading, hp3478_saved_state[0], 'd', 0);
+}
+
+static uint8_t 
+hp3478_temp_init(void)
+{
+ uint8_t s[5];
+ if(!hp3478_get_status(s)) return 0;
+ hp3478_saved_state[0] = s[0];
+ /* hp3478_saved_state[1] = s[1]; */
+ if(!hp3478_cmd_P(PSTR("M21"), 0)) return 0;
+ minmax_state = 1;
+ return 1;
+}
+
+static uint8_t 
+hp3478_temp_handle_data(struct hp3478_reading *reading)
+{
+ if(reading->exp == 9) {
+  printf_P(PSTR("there\r\n"));
+  if(minmax_state) {
+   minmax_state = 0;
+   printf_P(PSTR("here\r\n"));
+   if(!hp3478_display_P(PSTR("  OPEN"), HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+  }
+  return 1;
+ }
+ minmax_state = 1;
+#define RTD_A 3.908e-3
+#define RTD_B -5.8019e-7
+#define RTD_C -4.2735e-12
+#define RTD_R0 1000.0
+ { 
+  uint8_t i;
+  double t, r = reading->value;
+  //printf_P(PSTR("temp: %u->%lu\r\n"), (unsigned)6-reading->dot-reading->exp, reading->value);
+  for(i = 6-reading->dot-reading->exp; i != 0; i--) r /= 10;
+  t = (-(RTD_R0*RTD_A)+sqrt((RTD_R0*RTD_R0*RTD_A*RTD_A) - (4*RTD_R0*RTD_B)*(RTD_R0-r)))/(2*RTD_R0*RTD_B);
+  reading->value = t*1000;
+  //printf_P(PSTR("temp: %lu\r\n"), (uint32_t)t);
+  reading->exp = 0;
+  reading->dot = 3;
+ }
+ return hp3478_display_reading(reading, hp3478_saved_state[0], 'c', 0);
+}
+
 
 static uint8_t 
 hp3478_cont_fini(void)
@@ -1493,7 +1580,7 @@ hp3478_cont_fini(void)
  beep(0);
  cmd[0] = 'R';
  if(s2 & HP3478_ST_AUTORANGE) cmd[1] = 'A';
- else cmd[1] = '1' + ((s1&HP3478_ST_RANGE)>>2);
+ else cmd[1] = '0' + ((s1&HP3478_ST_RANGE)>>2);
  cmd[2] = 'N';
  switch(s1 & HP3478_ST_N_DIGITS) {
          case HP3478_ST_N_DIGITS5: cmd[3] = '5'; break;
@@ -1524,7 +1611,6 @@ hp3478_cont_init(void)
 #define MINMAX_DISP_NONE 0
 #define MINMAX_DISP_MIN  4
 #define MINMAX_DISP_MAX  8
-static uint8_t minmax_state = 0;
 static struct hp3478_reading minmax_min;
 static struct hp3478_reading minmax_max;
 static uint8_t 
@@ -1652,7 +1738,7 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
 
 static uint8_t ahld_n_stable;
 static uint8_t
-hp3478_autohold_start(void)
+hp3478_autohold_init(void)
 {
  uint8_t s[5];
  ahld_n_stable = 0;
@@ -1787,6 +1873,8 @@ hp3478a_handler(uint8_t ev)
 #define HP3478_MMAX    9
 #define HP3478_AHLD   10 
 #define HP3478_AHLL   11 
+#define HP3478_DIOD   12 
+#define HP3478_TEMP   13 
  static uint8_t state = HP3478_INIT;
  uint8_t sb;
  uint8_t st[5];
@@ -1805,6 +1893,7 @@ hp3478a_handler(uint8_t ev)
                   hp3478_cmd_P(PSTR("M00D1T1"), 0);
                   break;
          
+          case HP3478_DIOD:
           case HP3478_CONT:
                   hp3478_cont_fini();
           default:
@@ -1844,7 +1933,7 @@ hp3478a_handler(uint8_t ev)
                    return 1800;
                   }
                   if(reading.exp == 9) {
-                   if(!hp3478_autohold_start()) HP3478_REINIT;
+                   if(!hp3478_autohold_init()) HP3478_REINIT;
                    state = HP3478_AHLD;
                    return 0xffff;
                   }
@@ -1862,6 +1951,7 @@ hp3478a_handler(uint8_t ev)
                  return 100;
 
           case HP3478_CONT:
+          case HP3478_DIOD:
                   hp3478_cont_fini();
 
           default:
@@ -1894,7 +1984,7 @@ hp3478a_handler(uint8_t ev)
                                                  printf_P(PSTR("menu: error\r\n"));
                                                  HP3478_REINIT;
                          case HP3478_MENU_BEEP: 
-                         case HP3478_MENU_BEEP1: 
+                         case HP3478_MENU_XOHM_BEEP: 
                                                  state = HP3478_CONT;
                                                  if(!hp3478_cont_init()) HP3478_REINIT;
                                                  return 0xffff;
@@ -1904,14 +1994,27 @@ hp3478a_handler(uint8_t ev)
                                                  if(!hp3478_xohm_init()) HP3478_REINIT;
                                                  return 0xffff;
                          case HP3478_MENU_MINMAX: 
+                         case HP3478_MENU_OHM_MINMAX: 
                                                  state = HP3478_MMAX;
                                                  printf_P(PSTR("menu: minmax\r\n"));
                                                  if(!hp3478_minmax_init()) HP3478_REINIT;
                                                  return 0xffff;
                          case HP3478_MENU_AUTOHOLD: 
+                         case HP3478_MENU_OHM_AUTOHOLD: 
                                                  state = HP3478_AHLD;
                                                  printf_P(PSTR("menu: autohold\r\n"));
-                                                 if(!hp3478_autohold_start()) HP3478_REINIT;
+                                                 if(!hp3478_autohold_init()) HP3478_REINIT;
+                                                 return 0xffff;
+
+                         case HP3478_MENU_DIODE: 
+                                                 state = HP3478_DIOD;
+                                                 printf_P(PSTR("menu: diode\r\n"));
+                                                 if(!hp3478_diode_init()) HP3478_REINIT;
+                                                 return 0xffff;
+                         case HP3478_MENU_TEMP: 
+                                                 state = HP3478_TEMP;
+                                                 printf_P(PSTR("menu: temp\r\n"));
+                                                 if(!hp3478_temp_init()) HP3478_REINIT;
                                                  return 0xffff;
                          case HP3478_MENU_DONE: 
                                                  state = HP3478_IDLE;
@@ -1926,14 +2029,14 @@ hp3478a_handler(uint8_t ev)
 
          case HP3478_RELS:
                  if((ev & EV_TIMEOUT) != 0) {
-                  if(!hp3478_autohold_start()) HP3478_REINIT;
+                  if(!hp3478_autohold_init()) HP3478_REINIT;
                   state = HP3478_AHLD;
                   return 0xffff;
                  }
                  if((sb & HP3478_SB_DREADY) == 0) return TIMEOUT_CONT;
                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
                  if(reading.exp == 9) {
-                  if(!hp3478_autohold_start()) HP3478_REINIT;
+                  if(!hp3478_autohold_init()) HP3478_REINIT;
                   state = HP3478_AHLD;
                   return 0xffff;
                  }
@@ -1976,6 +2079,14 @@ hp3478a_handler(uint8_t ev)
                   return 0xffff;
                  } 
                  return 0xffff; /* what was it? */
+         case HP3478_TEMP:
+                if(sb & HP3478_SB_DREADY) {
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
+                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
+                  if(!hp3478_temp_handle_data(&reading)) HP3478_REINIT;
+                  return 0xffff;
+                }
+                return 0xffff;
          case HP3478_XOHM:
                 if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
@@ -1996,6 +2107,12 @@ hp3478a_handler(uint8_t ev)
                    if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) HP3478_REINIT;
                    beep(0);
                   }
+                }
+                return TIMEOUT_INF;
+         case HP3478_DIOD:
+                if(sb & HP3478_SB_DREADY) {
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
+                  if(!hp3478_diode_handle_data(&reading)) HP3478_REINIT;
                 }
                 return TIMEOUT_INF;
          case HP3478_MMAX:
