@@ -8,7 +8,7 @@ NAME = hp3478-ext
 LDFLAGS = -Wl,-Map,$(NAME).map
 CFLAGS=  $(OFLAG) -g -Wall -mmcu=$(MCU) -ffreestanding -Wa,-ahlms=$(<:.c=.lst)
 
-.SUFFIXES: .s .bin .out .hex
+.SUFFIXES: .s .bin .out .hex .eep
 
 .c.s:
 	$(CC) $(CFLAGS) -S $<
@@ -25,7 +25,12 @@ CFLAGS=  $(OFLAG) -g -Wall -mmcu=$(MCU) -ffreestanding -Wa,-ahlms=$(<:.c=.lst)
 .out.hex:
 	avr-objcopy -R .eeprom -R .fuse -R .lock -O ihex $< $@
 
-all:	$(NAME).hex
+.out.eep:
+	avr-objcopy -j .eeprom --set-section-flags=.eeprom="alloc,load" \
+    --change-section-lma .eeprom=0 -O ihex $< $@
+# --no-change-warnings
+
+all:	$(NAME).hex $(NAME).eep
 
 OBJS = $(NAME).o uart.o
 
