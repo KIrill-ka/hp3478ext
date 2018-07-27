@@ -28,7 +28,6 @@
  TODO list
 
  - Display 0 with O?
- - RTD temperature measurement
  */
 
 /* 
@@ -237,6 +236,8 @@ uint8_t EEMEM gpib_end_seq_eep = 0;
 #define GPIB_TALK   2
 static uint8_t gpib_state = 0;
 static uint8_t gpib_end_seq = 0;
+static uint8_t gpib_end_seq_tx = 0;
+static uint8_t gpib_end_seq_rx = 0;
 static uint8_t gpib_my_addr = GPIB_MY_DEFAULT_ADDRESS;
 static uint8_t gpib_hp3478_addr = GPIB_HP3478_DEFAULT_ADDRESS;
 volatile uint8_t gpib_srq_interrupt;
@@ -244,6 +245,7 @@ volatile uint8_t gpib_srq_interrupt;
 #define GPIB_END_CR  1
 #define GPIB_END_LF  2
 #define GPIB_END_EOI 4
+#define GPIB_END_BUF 8 /* synthetic, used as return value from gpib_receive */
 
 static char cmd_hist[CMD_BUF_SIZE*CMD_HISTORY_SIZE];
 static char cmd_hist_len = 0;
@@ -341,14 +343,14 @@ gpib_receive(uint8_t *buf, uint8_t buf_size, uint8_t *n_received, uint8_t stop)
     }
     
     nrfd_set(1); /* not ready for receiving data */
-    if (eoi() && (stop & GPIB_END_EOI) != 0) do_stop = 1;
+    if (eoi() && (stop & GPIB_END_EOI) != 0) do_stop = GPIB_END_EOI;
     
     c = data_get();
     ndac_set(0); /* data accepted */
 
     buf[index++] = c;
-    if (c == 10 && (stop & GPIB_END_LF) != 0) do_stop = 1;
-    if (c == 13 && (stop & GPIB_END_CR) != 0) do_stop = 1;
+    if (c == 10 && (stop & GPIB_END_LF) != 0) do_stop = GPIB_END_LF;
+    if (c == 13 && (stop & GPIB_END_CR) != 0) do_stop = GPIB_END_CR;
 
     while (dav()) { /* waiting for rising edge */
       if ((uint8_t)((uint8_t)msec_count-ts) > GPIB_MAX_RECEIVE_TIMEOUT_mS) {
@@ -361,7 +363,8 @@ gpib_receive(uint8_t *buf, uint8_t buf_size, uint8_t *n_received, uint8_t stop)
     ndac_set(1);
   } while (index < buf_size && !do_stop);
   *n_received = index;
-  return 1;
+  if(do_stop) return do_stop;
+  return GPIB_END_BUF;
 }
 
 static uint8_t
@@ -704,15 +707,14 @@ line_edit(uint8_t c, uint8_t *buf, uint8_t *len)
 }
 
 static uint8_t 
-get_read_length(const uint8_t *buf) 
+get_read_length(const uint8_t *buf, uint8_t len) 
 {
- uint8_t l = GPIB_BUF_SIZE;
- if(ishexdigit(buf[1])) l = hex2dec(buf[1]);
- if(ishexdigit(buf[2])) {
+ uint8_t l = 0;
+ if(len > 1 && ishexdigit(buf[1])) l = hex2dec(buf[1]);
+ if(len > 2 && ishexdigit(buf[2])) {
   l <<= 4;
   l |= hex2dec(buf[2]);
  }
- if(l > GPIB_BUF_SIZE) l = GPIB_BUF_SIZE;
  return l;
 }
 
@@ -761,8 +763,8 @@ get_set_opt(const uint8_t *buf, uint8_t len, uint8_t max, uint8_t *opt)
 static void 
 command_handler(uint8_t command, uint8_t *buf, uint8_t len)
 {
-  uint8_t gpibBuf[GPIB_BUF_SIZE];
-  uint8_t gpibIndex;
+  uint8_t gpib_buf[GPIB_BUF_SIZE];
+  uint8_t gpib_len;
   uint8_t i;
   uint8_t send_eoi;
   uint8_t result;
@@ -774,7 +776,7 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                     printf_P(PSTR("ERROR\r\n"));	  
                     break;
                    }
-                   result = gpib_transmit(buf+1, len-1, gpib_end_seq | (command == 'D' ? GPIB_END_EOI : 0) ); 
+                   result = gpib_transmit(buf+1, len-1, gpib_end_seq_tx | (command == 'D' ? GPIB_END_EOI : 0) ); 
                    if (result) printf_P(PSTR("OK\r\n"));
                    else printf_P(PSTR("TIMEOUT\r\n"));
 
@@ -793,7 +795,7 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    gpib_talk();
 
                    set_atn(1);
-                   result = gpib_transmit(buf+1, len-1, gpib_end_seq | GPIB_END_EOI);
+                   result = gpib_transmit(buf+1, len-1, gpib_end_seq_tx | GPIB_END_EOI);
 
                    if (result) printf_P(PSTR("OK\r\n"));
                    else printf_P(PSTR("TIMEOUT\r\n"));
@@ -837,48 +839,76 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    led_set(LED_SLOW);
                    gpib_listen();
 
-                   while (1) {
-                    uint8_t c;
-                    if (!uart_rx_empty()) c = uart_rx();
-                    if(c == 27) break;
-                    result = gpib_receive(gpibBuf, 1, &gpibIndex, 0);
-                    for (i=0; i < gpibIndex; i++) uart_tx(gpibBuf[i]);
-                    if(gpibIndex == 0) _delay_ms(10);
+                   uart_rx_esc_char();
+                   while (!uart_rx_esc_char()) {
+                    result = gpib_receive(gpib_buf, 1, &gpib_len, 0);
+                    for (i=0; i < gpib_len; i++) uart_tx(gpib_buf[i]);
+                    if(gpib_len == 0) _delay_ms(10);
                    }
                    gpib_state = 0;
                    gpib_talk();
                    led_set(LED_OFF);
                    break;
+#if 0
            case 'X': /* ascii receive */
                    if (gpib_state != GPIB_LISTEN) gpib_listen();
-                   gpib_receive(gpibBuf, GPIB_BUF_SIZE-1, &gpibIndex, GPIB_END_EOI);
-
-                   if (gpibIndex != 0) {
-                    gpibBuf[gpibIndex] = 0;
-                    printf_P(PSTR("%s"), gpibBuf);
-                   } else printf_P(PSTR("TIMEOUT\r\n"));
-
+                   result = gpib_receive(gpib_buf, GPIB_BUF_SIZE-1, &gpib_len, GPIB_END_EOI|gpib_end_seq_rx);
+                   if(gpib_len == 0) printf_P(PSTR("TIMEOUT\r\n"));
+                   else { 
+                     uart_puts(gpib_buf, gpib_len);
+                     while(result == GPIB_END_BUF) {
+                      result = gpib_receive(gpib_buf, GPIB_BUF_SIZE-1, &gpib_len, GPIB_END_EOI|gpib_end_seq_rx);
+                      if(gpib_len != 0) uart_puts(gpib_buf, gpib_len);
+                     }
+                   }
                    if (gpib_state != GPIB_LISTEN) gpib_talk();
                    break;
-           case 'Y': /* binary receive */
-                   if (gpib_state != GPIB_LISTEN) gpib_listen();
-                   result = gpib_receive(gpibBuf, get_read_length(buf), &gpibIndex, GPIB_END_EOI);
-                   uart_tx(gpibIndex);
-                   for (i=0; i<gpibIndex; i++) uart_tx(gpibBuf[i]);
-
-                   if (gpib_state != GPIB_LISTEN) gpib_talk();
-                   break;
+#endif
            case 'Z': /* hex receive */
-                   if (gpib_state != GPIB_LISTEN) gpib_listen();
-                   result = gpib_receive(gpibBuf, get_read_length(buf), &gpibIndex, GPIB_END_EOI);
-
-                   printf_P(PSTR("%02X"), gpibIndex);
-                   for (i=0; i<gpibIndex; i++)
-                    printf_P(PSTR("%02X"), gpibBuf[i]);
-                   printf_P(PSTR("\r\n"));
-
-                   if (gpib_state != GPIB_LISTEN) gpib_talk();
+           case 'X': /* ascii receive */
+           case 'Y': /* binary receive */
+                   {
+                    uint8_t l, unlim;
+                    if (gpib_state != GPIB_LISTEN) gpib_listen();
+                    l = get_read_length(buf, len);
+                    unlim = l == 0;
+                    uart_rx_esc_char(); /* clear previous escape */
+                    do {
+                     gpib_len = l > GPIB_BUF_SIZE ? GPIB_BUF_SIZE : l;
+                     result = gpib_receive(gpib_buf, gpib_len, &gpib_len, GPIB_END_EOI);
+                     if(command == 'Z') for (i=0; i<gpib_len; i++) printf_P(PSTR("%02X"), gpib_buf[i]);
+                     else {
+                      if(command == 'Y') uart_tx(gpib_len);
+                      uart_puts(gpib_buf, gpib_len);
+                     }
+                     l -= gpib_len;
+                    } while(result == GPIB_END_BUF && (l != 0 || unlim) && !uart_rx_esc_char());
+                    if(command == 'Y') {
+                     if(gpib_len == GPIB_BUF_SIZE) uart_tx(0); /* chunk size < GPIB_BUF_SIZE marks end of transfer
+                                                                   in this case we need to send an additional empty
+                                                                   chunk */
+                    } else printf_P(PSTR("\r\n"));
+                    if (gpib_state != GPIB_LISTEN) gpib_talk();
+                   }
                    break;
+#if 0
+           case 'Z': /* hex receive */
+                   {
+                    uint8_t l, unlim;
+                    if (gpib_state != GPIB_LISTEN) gpib_listen();
+                    l = get_read_length(buf, len);
+                    unlim = l == 0;
+                    do {
+                     gpib_len = l > GPIB_BUF_SIZE || unlim ? GPIB_BUF_SIZE : l;
+                     result = gpib_receive(gpib_buf, gpib_len, &gpib_len, GPIB_END_EOI);
+                     for (i=0; i<gpib_len; i++) printf_P(PSTR("%02X"), gpib_buf[i]);
+                     l -= gpib_len;
+                    } while(result == GPIB_END_BUF && (l != 0 || unlim));
+                    printf_P(PSTR("\r\n"));
+                    if (gpib_state != GPIB_LISTEN) gpib_talk();
+                   }
+                   break;
+#endif
            case '?':
                    printf_P(help);
                    break;
@@ -896,11 +926,13 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    get_set_opt(buf, len, 31, &gpib_hp3478_addr);
                    break;
            case 'Q':
-                   get_set_opt(buf, len, 3, &gpib_end_seq);
+                   get_set_opt(buf, len, 33, &gpib_end_seq);
+                   gpib_end_seq_tx = gpib_end_seq & 3;
+                   gpib_end_seq_rx = (gpib_end_seq/10) & 3;
                    break;
 
            case 'T':
-                   if (!convert_hex_message(&buf[1], len-1, gpibBuf, &gpibIndex, &send_eoi)) {
+                   if (!convert_hex_message(&buf[1], len-1, gpib_buf, &gpib_len, &send_eoi)) {
                     printf_P(PSTR("ERROR\r\n"));
                     break;
                    }
@@ -910,16 +942,16 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                      printf_P(PSTR("ERROR\r\n"));	  
                      break;
                     }
-                    result = gpib_transmit(gpibBuf, gpibIndex, send_eoi); 
+                    result = gpib_transmit(gpib_buf, gpib_len, send_eoi); 
                     if (result) printf_P(PSTR("OK\r\n"));
                     else printf_P(PSTR("TIMEOUT\r\n"));
                    } else {
                     /* send command  */
-                    for (i=0; i<gpibIndex; i++) {
-                     if (gpibBuf[i] == '?' || gpibBuf[i] == gpib_my_addr+64) {
+                    for (i=0; i<gpib_len; i++) {
+                     if (gpib_buf[i] == '?' || gpib_buf[i] == gpib_my_addr+64) {
                       gpib_state = 0;
                       led_set(LED_OFF);
-                     } else if (gpibBuf[i] == gpib_my_addr+32) {
+                     } else if (gpib_buf[i] == gpib_my_addr+32) {
                       gpib_state = GPIB_LISTEN;
                       led_set(LED_FAST);
                      }
@@ -929,7 +961,7 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
 
                     set_atn(1);
                     _delay_us(100);
-                    result = gpib_transmit(gpibBuf, gpibIndex, 0);
+                    result = gpib_transmit(gpib_buf, gpib_len, 0);
 
                     if (result) printf_P(PSTR("OK\r\n"));
                     else printf_P(PSTR("TIMEOUT\r\n"));
@@ -2174,7 +2206,11 @@ void main(void)
   fdevopen(uart_putchar, NULL);
   
   command = 13; /* force line edit restart */
-  if((b = eeprom_read_byte(&gpib_end_seq_eep)) != 0xff) gpib_end_seq = b;
+  if((b = eeprom_read_byte(&gpib_end_seq_eep)) != 0xff) {
+   gpib_end_seq = b;
+   gpib_end_seq_tx = gpib_end_seq & 3;
+   gpib_end_seq_rx = (gpib_end_seq/10) & 3;
+  }
   if((b = eeprom_read_byte(&gpib_my_addr_eep)) != 0xff) gpib_my_addr = b;
   if((b = eeprom_read_byte(&gpib_hp3478_addr_eep)) != 0xff) gpib_hp3478_addr = b;
   if((b = eeprom_read_byte(&uart_echo_eep)) != 0xff) uart_echo = b;

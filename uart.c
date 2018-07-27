@@ -25,6 +25,7 @@ static volatile uint8_t rx_ring[UART_RX_FIFO_SIZE];
 static volatile uint8_t tx_rp = 0;
 static volatile uint8_t tx_wp = 0;
 static volatile uint8_t tx_ring[UART_TX_FIFO_SIZE];
+static volatile uint8_t esc = 0;
 
 ISR(USART_RX_vect)
 {
@@ -36,6 +37,7 @@ ISR(USART_RX_vect)
  }
 
  b = UDR0;
+ if(b == 27) esc = 1;
  prev = rx_wp;
  next = prev+1;
  if(next == UART_RX_FIFO_SIZE) next = 0;
@@ -55,6 +57,16 @@ ISR(USART_UDRE_vect)
   if(++next == UART_TX_FIFO_SIZE) next = 0;
   tx_rp = next;
  }
+}
+
+uint8_t
+uart_rx_esc_char(void)
+{
+ if(esc) {
+   esc = 0;
+   return 1;
+ }
+ return 0;
 }
 
 void 
