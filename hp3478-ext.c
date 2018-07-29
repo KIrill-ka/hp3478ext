@@ -28,6 +28,12 @@
  TODO list
 
  - Display 0 with O?
+ - Rename data commands to D - ascii data in both directions
+   and T formatted data and commands in both directions  H - hex, B - binary, U - unbuffered.
+   THC THD TBD TUD
+ - Update help to reflect end sequence changes.
+ - Implement unbuffered binary write TUD using escape-sequence as stop
+ - Implement unbuffered binary read TUD using escape-sequence as stop
  */
 
 /* 
@@ -207,10 +213,10 @@ const char help[] PROGMEM =
   "  TC Hex command\r\n"
   "  TD Hex data*\r\n"
   "Receive commands (receive until EOI, max 127 bytes)\r\n"
-  "  X ASCII, <payload> or TIMEOUT\r\n"
+  "  X ASCII**, <payload>\r\n"
   "  Y Binary**, <length><payload>\r\n"
   "  Z Hex**, <length><payload>\r\n"
-  "  P Continous read (plotter mode), ESC to exit\r\n"
+  "  P Continous read (plotter mode), <ESC> to exit\r\n"
   "General commands\r\n"
   "  A Set/get converter GPIB address\r\n"
   "  S Get REN/SRQ/LISTEN state (1 if true)\r\n"
@@ -803,7 +809,6 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    set_atn(0);
 
                    if (gpib_state == GPIB_LISTEN) gpib_listen();
-                   else gpib_talk();
 
                    break;
            case 'R':
@@ -874,8 +879,9 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                     unlim = l == 0;
                     uart_rx_esc_char(); /* clear previous escape */
                     do {
-                     gpib_len = l > GPIB_BUF_SIZE ? GPIB_BUF_SIZE : l;
-                     result = gpib_receive(gpib_buf, gpib_len, &gpib_len, GPIB_END_EOI);
+                     gpib_len = l > GPIB_BUF_SIZE || unlim ? GPIB_BUF_SIZE : l;
+                     result = gpib_receive(gpib_buf, gpib_len, &gpib_len, GPIB_END_EOI | gpib_end_seq_rx);
+                     //printf_P(PSTR("%d %d %d"), (unsigned)gpib_len, (unsigned)l, (unsigned)result);
                      if(command == 'Z') for (i=0; i<gpib_len; i++) printf_P(PSTR("%02X"), gpib_buf[i]);
                      else {
                       if(command == 'Y') uart_tx(gpib_len);
@@ -887,7 +893,7 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                      if(gpib_len == GPIB_BUF_SIZE) uart_tx(0); /* chunk size < GPIB_BUF_SIZE marks end of transfer
                                                                    in this case we need to send an additional empty
                                                                    chunk */
-                    } else printf_P(PSTR("\r\n"));
+                    } else if(command == 'Z' || result == 0) printf_P(PSTR("\r\n"));
                     if (gpib_state != GPIB_LISTEN) gpib_talk();
                    }
                    break;
