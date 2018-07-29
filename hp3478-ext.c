@@ -236,12 +236,12 @@ uint8_t EEMEM uart_echo_eep = 1;
 uint8_t EEMEM gpib_my_addr_eep = GPIB_MY_DEFAULT_ADDRESS;
 uint8_t EEMEM gpib_hp3478_addr_eep = GPIB_HP3478_DEFAULT_ADDRESS;
 uint8_t EEMEM start_printer_eep = 0;
-uint8_t EEMEM gpib_end_seq_eep = 0;
+uint8_t EEMEM gpib_end_seq_rx_eep = GPIB_END_EOI;
+uint8_t EEMEM gpib_end_seq_tx_eep = GPIB_END_EOI;
 
 #define GPIB_LISTEN 1
 #define GPIB_TALK   2
 static uint8_t gpib_state = 0;
-static uint8_t gpib_end_seq = 0;
 static uint8_t gpib_end_seq_tx = 0;
 static uint8_t gpib_end_seq_rx = 0;
 static uint8_t gpib_my_addr = GPIB_MY_DEFAULT_ADDRESS;
@@ -725,19 +725,60 @@ get_read_length(const uint8_t *buf, uint8_t len)
 }
 
 
-static void 
-get_set_opt(const uint8_t *buf, uint8_t len, uint8_t max, uint8_t *opt)
+static int 
+get_set_opt(const uint8_t *buf, uint8_t len)
 {
  uint16_t v;
  uint8_t i, w = 0;
  uint8_t *opt_eep;
+ uint8_t max;
+ uint8_t *opt;
 
- if(len == 1) {
+ if(len != 0) {
+  switch(buf[0]) {
+          case 'X':
+                  opt = &hp3478_ext_enable;
+                  opt_eep = &hp3478_ext_en_eep;
+                  max = 1;
+                  break;
+          case 'I':
+                  opt = &uart_echo;
+                  opt_eep = &uart_echo_eep;
+                  max = 1;
+                  break;
+          case 'C':
+                  opt = &gpib_my_addr;
+                  opt_eep = &gpib_my_addr_eep;
+                  max = 30;
+                  break;
+          case 'D':
+                  opt = &gpib_hp3478_addr;
+                  opt_eep = &gpib_hp3478_addr_eep;
+                  max = 31;
+                  break;
+          case 'R':
+                   opt = &gpib_end_seq_rx;
+                   opt_eep = &gpib_end_seq_rx_eep;
+                   max = 7;
+          case 'T':
+                   opt = &gpib_end_seq_tx;
+                   opt_eep = &gpib_end_seq_tx_eep;
+                   max = 7;
+                  break;
+          default:
+                  printf_P(PSTR("WRONG COMMAND\r\n"));
+                  return;
+  }
+  buf++;
+  len--;
+ }
+
+ if(len == 0) {
   printf_P(PSTR("%d\r\n"), *opt);
   return;
  }
 
- for(i = 1, v = 0; i < len; i++) {
+ for(i = 0, v = 0; i < len; i++) {
   uint8_t c = buf[i];
   
   if(c > '9' || c < '0') {
@@ -755,12 +796,6 @@ get_set_opt(const uint8_t *buf, uint8_t len, uint8_t max, uint8_t *opt)
   return;
  }
 
- if(opt == &hp3478_ext_enable) opt_eep = &hp3478_ext_en_eep;
- else if(opt == &uart_echo) opt_eep = &uart_echo_eep;
- else if(opt == &gpib_my_addr) opt_eep = &gpib_my_addr_eep;
- else if(opt == &gpib_hp3478_addr) opt_eep = &gpib_hp3478_addr_eep;
- else if(opt == &gpib_end_seq) opt_eep = &gpib_end_seq_eep;
-  
  *opt = (uint8_t)v;
  if(w) eeprom_write_byte(opt_eep, (uint8_t)v);
  printf_P(PSTR("OK\r\n"));
@@ -776,8 +811,7 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
   uint8_t result;
 
    switch(command) {
-           case 'D': /* send with EOI */
-           case 'M': /* send without EOI */
+           case 'D': /* send/receive ASCII */
                    if (gpib_state == GPIB_LISTEN) {
                     printf_P(PSTR("ERROR\r\n"));	  
                     break;
@@ -787,7 +821,7 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    else printf_P(PSTR("TIMEOUT\r\n"));
 
                    break;
-           case 'C': /* send command */
+           case 'C': /* send ASCII command */
                    for (i=1; i<len; i++) {
                     if (buf[i] == '?' || buf[i] == 64+gpib_my_addr) {
                      gpib_state = 0;
@@ -855,20 +889,6 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    led_set(LED_OFF);
                    break;
 #if 0
-           case 'X': /* ascii receive */
-                   if (gpib_state != GPIB_LISTEN) gpib_listen();
-                   result = gpib_receive(gpib_buf, GPIB_BUF_SIZE-1, &gpib_len, GPIB_END_EOI|gpib_end_seq_rx);
-                   if(gpib_len == 0) printf_P(PSTR("TIMEOUT\r\n"));
-                   else { 
-                     uart_puts(gpib_buf, gpib_len);
-                     while(result == GPIB_END_BUF) {
-                      result = gpib_receive(gpib_buf, GPIB_BUF_SIZE-1, &gpib_len, GPIB_END_EOI|gpib_end_seq_rx);
-                      if(gpib_len != 0) uart_puts(gpib_buf, gpib_len);
-                     }
-                   }
-                   if (gpib_state != GPIB_LISTEN) gpib_talk();
-                   break;
-#endif
            case 'Z': /* hex receive */
            case 'X': /* ascii receive */
            case 'Y': /* binary receive */
@@ -897,47 +917,16 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                     if (gpib_state != GPIB_LISTEN) gpib_talk();
                    }
                    break;
-#if 0
-           case 'Z': /* hex receive */
-                   {
-                    uint8_t l, unlim;
-                    if (gpib_state != GPIB_LISTEN) gpib_listen();
-                    l = get_read_length(buf, len);
-                    unlim = l == 0;
-                    do {
-                     gpib_len = l > GPIB_BUF_SIZE || unlim ? GPIB_BUF_SIZE : l;
-                     result = gpib_receive(gpib_buf, gpib_len, &gpib_len, GPIB_END_EOI);
-                     for (i=0; i<gpib_len; i++) printf_P(PSTR("%02X"), gpib_buf[i]);
-                     l -= gpib_len;
-                    } while(result == GPIB_END_BUF && (l != 0 || unlim));
-                    printf_P(PSTR("\r\n"));
-                    if (gpib_state != GPIB_LISTEN) gpib_talk();
-                   }
-                   break;
 #endif
            case '?':
                    printf_P(help);
-                   break;
-           case 'E':
-                   get_set_opt(buf, len, 1, &uart_echo);
                    break;
            case 'H':
                    for (i=0; i < cmd_hist_len; i++)
                     printf_P(PSTR("%d: %s\r\n"), i, cmd_hist+i*CMD_BUF_SIZE);
                    break;
-           case 'A':
-                   get_set_opt(buf, len, 30, &gpib_my_addr);
-                   break;
-           case 'B':
-                   get_set_opt(buf, len, 31, &gpib_hp3478_addr);
-                   break;
-           case 'Q':
-                   get_set_opt(buf, len, 33, &gpib_end_seq);
-                   gpib_end_seq_tx = gpib_end_seq & 3;
-                   gpib_end_seq_rx = (gpib_end_seq/10) & 3;
-                   break;
-
-           case 'T':
+           case 'T': /* THC - transfer command hex TBC - transfer command binary
+                        TUH - transfer binary data unbuffered, THD transfer hex data, TBD transfer binary data */
                    if (!convert_hex_message(&buf[1], len-1, gpib_buf, &gpib_len, &send_eoi)) {
                     printf_P(PSTR("ERROR\r\n"));
                     break;
@@ -978,8 +967,8 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
 
                    }
                    break;
-           case 'K':
-                   get_set_opt(buf, len, 1, &hp3478_ext_enable);
+           case 'O':
+                   get_set_opt(buf+1, len-1);
                    break;
            case 0: 
            case 13: 
