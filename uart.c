@@ -4,19 +4,40 @@
 #include "uart.h"
 
 #define FOSC 16000000UL
-#define UART_UBRR (FOSC/8/UART_BAUD-1) /* U2X set to 1*/
+#define UART_UBRR_115200 (FOSC/8/115200UL-1) /* U2X set to 1*/
+#define UART_UBRR_1M (1)
+#define UART_UBRR_2M (0)
 
 
 void 
 uart_init(void) 
 {
-  /*UBRR0H = (uint8_t)(UART_UBRR>>8);
-  UBRR0L = (uint8_t)UART_UBRR;*/
-  UBRR0 = (uint16_t)UART_UBRR;
+  /* UBRR0H = (uint8_t)(UART_UBRR>>8);
+     UBRR0L = (uint8_t)UART_UBRR; */
+  UBRR0 = (uint16_t)UART_UBRR_115200;
   
   UCSR0A = _BV(U2X0);
   UCSR0C = _BV(UCSZ01) | _BV(UCSZ00); /* 8N1 */
   UCSR0B = _BV(RXEN0) | _BV(TXEN0) | _BV(RXCIE0) | _BV(UDRIE0);
+}
+
+void
+uart_set_speed(uint8_t spd)
+{
+ switch(spd) {
+         case UART_115200:
+                 UBRR0 = (uint16_t)UART_UBRR_115200;
+                 break;
+         case UART_500K:
+                 UBRR0 = (uint16_t)UART_UBRR_500K;
+                 break;
+         case UART_1M:
+                 UBRR0 = (uint16_t)UART_UBRR_1M;
+                 break;
+         case UART_2M:
+                 UBRR0 = (uint16_t)UART_UBRR_2M;
+                 break;
+ }
 }
 
 static volatile uint8_t rx_rp = 0;
