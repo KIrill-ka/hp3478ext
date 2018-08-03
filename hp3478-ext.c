@@ -106,7 +106,7 @@
 #define GPIB_HP3478_DEFAULT_ADDRESS 23
 #define GPIB_BUF_SIZE 128
 #define GPIB_MAX_RECEIVE_TIMEOUT_mS 200
-#define GPIB_MAX_TRANSMIT_TIMEOUT_mS 100
+#define GPIB_MAX_TRANSMIT_TIMEOUT_mS 200
 
 /* PIN assignment */
 /*
@@ -801,7 +801,7 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    gpib_talk();
 
                    set_atn(1);
-                   result = gpib_transmit(buf+1, len-1, gpib_end_seq_tx | GPIB_END_EOI);
+                   result = gpib_transmit(buf+1, len-1, 0);
 
                    if (result) printf_P(PSTR("OK\r\n"));
                    else printf_P(PSTR("TIMEOUT\r\n"));
