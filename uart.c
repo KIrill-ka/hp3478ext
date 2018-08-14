@@ -5,16 +5,15 @@
 
 #define FOSC 16000000UL
 #define UART_UBRR_115200 (FOSC/8/115200UL-1) /* U2X set to 1*/
+#define UART_UBRR_500K (3)
 #define UART_UBRR_1M (1)
 #define UART_UBRR_2M (0)
 
 
 void 
-uart_init(void) 
+uart_init(uint8_t spd) 
 {
-  /* UBRR0H = (uint8_t)(UART_UBRR>>8);
-     UBRR0L = (uint8_t)UART_UBRR; */
-  UBRR0 = (uint16_t)UART_UBRR_115200;
+  uart_set_speed(spd);
   
   UCSR0A = _BV(U2X0);
   UCSR0C = _BV(UCSZ01) | _BV(UCSZ00); /* 8N1 */
@@ -25,7 +24,7 @@ void
 uart_set_speed(uint8_t spd)
 {
  switch(spd) {
-         case UART_115200:
+         default:
                  UBRR0 = (uint16_t)UART_UBRR_115200;
                  break;
          case UART_500K:
@@ -112,10 +111,17 @@ uart_rx_count(void)
  return s;
 }
 
-uint8_t 
+uint8_t
 uart_rx_empty(void)
 {
  return rx_wp==rx_rp;
+}
+
+uint8_t
+uart_tx_empty(void)
+{
+ /* TODO: use TXC interrupt to know that nothing's being transmitted? */
+ return tx_wp==tx_rp;
 }
 
 uint8_t 
