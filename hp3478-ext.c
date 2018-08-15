@@ -785,6 +785,7 @@ get_set_opt(const uint8_t *buf, uint8_t len)
                   opt = &gpib_end_seq_rx;
                   opt_eep = &gpib_end_seq_rx_eep;
                   max = 7;
+                  break;
           case 'T':
                   opt = &gpib_end_seq_tx;
                   opt_eep = &gpib_end_seq_tx_eep;
