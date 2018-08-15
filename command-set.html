@@ -5,7 +5,7 @@
 	<title></title>
 	<meta name="generator" content="LibreOffice 5.2.7.2 (Linux)"/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2018-08-15T22:20:07.528110670"/>
+	<meta name="changed" content="2018-08-15T23:25:43.680746992"/>
 	<style type="text/css">
 		@page { margin: 0.79in }
 		p { margin-bottom: 0.1in; line-height: 120% }
@@ -36,18 +36,18 @@ learning how particular device behaves.</p>
 <b>BACKSPACE</b> (\b),
 <b>DELETE</b> (\x7f)  delete character before the cursor</pre><p class="normal-western">
 When used from software, interactive mode should be turned off with
-or <i><span style="font-weight: normal">O1</span></i> <i>OI0</i>
-commands.</p>
+<i><span style="font-weight: normal">O1 </span></i><span style="font-style: normal"><span style="font-weight: normal">or</span></span>
+<i>OI0</i> commands.</p>
 <p class="normal-western"><br/>
 
 </p>
 <pre class="western"><b>COMMAND REFERENCE</b>
-
-<u>D: transmit or receive ASCII data (ATN off)</u>
 </pre><p class="normal-western">
-Command receives data if the adapter is in LISTEN state. End of
-transmission is determined by receive end sequence (OR command).
-Absence of data (timeout) is presented with an empty string.</p>
+<u><b>D</b>: transmit or receive ASCII data (ATN off)</u></p>
+<p class="normal-western">Command receives data if the adapter is in
+LISTEN state. End of transmission is determined by receive end
+sequence (OR command). Absence of data (timeout) is presented with an
+empty string.</p>
 <p class="normal-western">Command transmits data if the adapter is
 not in LISTEN state. Payload immediately follows the command
 character. Depending on the OT (transmit end sequence) setting,
@@ -59,11 +59,8 @@ transfer is terminated with EOI, \r or \n.</p>
     \r\n               time out waiting for device while receiving
     &lt;payload&gt;          data received from the device
 
-
-<font face="Liberation Mono"><font size="2" style="font-size: 10pt"><span lang="en-GB"><u>C: transmit ASCII command (ATN on)</u></span></font></font></pre><p class="normal-western">
-<br/>
-
-</p>
+</pre><p class="normal-western">
+<u><b>C</b>: transmit ASCII command (ATN on)</u></p>
 <p class="normal-western">Command transmits ASCII bytes with ATN
 signal turned on. Transferred data is analysed to set the bus state
 as follows:</p>
@@ -76,42 +73,38 @@ it's talk address (+64) or unlisten command (?) is in the string.</p>
     <span lang="en-GB">TIMEOUT &lt;len&gt;\r\n  time out waiting for device</span>
                        <span lang="en-GB">&lt;len&gt; is number of bytes actually transmitted</span>
 
-
-<span lang="en-GB"><u>R, L: control REN signal</u></span>
 </pre><p class="normal-western">
-R turns REN on, L turns REN off.</p>
+<u><b>R</b>, <b>L</b>: control REN signal</u></p>
+<p class="normal-western">R turns REN on, L turns REN off.</p>
 <p class="normal-western">Response:</p>
 <pre lang="en-GB" class="western">	OK\r\n
 
-
-<span lang="en-GB"><u>I: clear interface</u></span>
 </pre><p class="normal-western">
-Turns IFC signal on for 1ms. GPIB adapter will exit LISTEN state.</p>
+<u><b>I</b>: clear interface</u></p>
+<p class="normal-western">Turns IFC signal on for 1ms. GPIB adapter
+will exit LISTEN state.</p>
 <p class="normal-western">Response:</p>
 <pre lang="en-GB" class="western">	OK\r\n
 
-
-<span lang="en-GB"><u>S: get status</u></span>
 </pre><p class="normal-western">
-Returns state of SRQ and REN lines as two ASCII characters 0 or 1.
-The third character is the GPIB adapter state: 0 = TALK, 1 = LISTEN.
-In contrast to LISTEN, in TALK state it actually doesn't verify
-whether its TALK address was sent or not.</p>
+<u><b>S</b>: get status</u></p>
+<p class="normal-western">Returns state of SRQ and REN lines as two
+ASCII characters 0 or 1. The third character is the GPIB adapter
+state: 0 = TALK, 1 = LISTEN. In contrast to LISTEN, in TALK state it
+actually doesn't verify whether its TALK address was sent or not.</p>
 <pre lang="en-GB" class="western">Response:
 <span lang="en-GB">	000\r\n		three characters, see above</span>
 
-
-<span lang="en-GB"><u>P: enter &quot;plotter&quot; mode</u></span>
-
-<span lang="en-GB">In plotter mode GPIB adapter continuously  attempts to read data from the bus.</span>
+</pre><p class="normal-western">
+<u><b>P</b>: enter &quot;plotter&quot; mode</u></p>
+<pre lang="en-GB" class="western">In plotter mode GPIB adapter continuously  attempts to read data from the bus.
 <span lang="en-GB">Send \x27 to exit plotter mode.</span></pre><p class="normal-western">
 Response:</p>
 <pre lang="en-GB" class="western">	&lt;data&gt;
 
-
-<span lang="en-GB"><u>O: option setting</u></span>
-
-<span lang="en-GB">O&lt;opt&gt;&lt;val&gt;     set option &lt;opt&gt; to decimal &lt;val&gt;</span>
+</pre><p class="normal-western">
+<u><b>O</b>: option setting</u></p>
+<pre lang="en-GB" class="western">O&lt;opt&gt;&lt;val&gt;     set option &lt;opt&gt; to decimal &lt;val&gt;
 <span lang="en-GB">O&lt;opt&gt;          request option value</span>
 <span lang="en-GB">O?              list available options</span>
 <span lang="en-GB">O&lt;opt&gt;&lt;val&gt;w    set option &lt;opt&gt; to &lt;val&gt; and remember it in EEPROM</span>
@@ -137,20 +130,17 @@ Response:</p>
 <span lang="en-GB">	ERROR\r\n	incorrect command syntax or value</span>
 <span lang="en-GB">	WRONG OPTION\r\n	unknown option</span>
 
-
-<span lang="en-GB"><u>?: quick help</u></span>
 </pre><p class="normal-western">
-Prints command summary.</p>
+<u><b>?</b>: quick help</u></p>
+<p class="normal-western">Prints command summary.</p>
 <pre lang="en-GB" class="western">
-
-<span lang="en-GB"><u>H: command list</u></span>
 </pre><p class="normal-western">
-Prints command history.</p>
+<u>H: command list</u></p>
+<p class="normal-western">Prints command history.</p>
 <pre lang="en-GB" class="western">
-
-<span lang="en-GB"><u>T: binary and hex transfer commands</u></span>
-
-<span lang="en-GB">THC      transmit hex command</span>
+</pre><p class="normal-western">
+<u><b>T</b>: binary and hex transfer commands</u></p>
+<pre lang="en-GB" class="western">THC      transmit hex command
 <span lang="en-GB">TBD      transmit binary data</span>
 <span lang="en-GB">TBD&lt;len&gt; receive binary data</span>
 <span lang="en-GB">THD      transmit hex data</span>
