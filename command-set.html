@@ -5,7 +5,7 @@
 	<title></title>
 	<meta name="generator" content="LibreOffice 5.2.7.2 (Linux)"/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2018-08-15T23:25:43.680746992"/>
+	<meta name="changed" content="2018-08-17T18:52:48.980478010"/>
 	<style type="text/css">
 		@page { margin: 0.79in }
 		p { margin-bottom: 0.1in; line-height: 120% }
@@ -97,10 +97,11 @@ actually doesn't verify whether its TALK address was sent or not.</p>
 
 </pre><p class="normal-western">
 <u><b>P</b>: enter &quot;plotter&quot; mode</u></p>
-<pre lang="en-GB" class="western">In plotter mode GPIB adapter continuously  attempts to read data from the bus.
-<span lang="en-GB">Send \x27 to exit plotter mode.</span></pre><p class="normal-western">
-Response:</p>
-<pre lang="en-GB" class="western">	&lt;data&gt;
+<p class="normal-western">In plotter mode GPIB adapter continuously
+attempts to read data from the bus. Send ESCAPE (\x27) to exit
+plotter mode.</p>
+<p class="normal-western">Response:</p>
+<pre lang="en-GB" class="western">    &lt;data&gt;
 
 </pre><p class="normal-western">
 <u><b>O</b>: option setting</u></p>
@@ -110,9 +111,9 @@ Response:</p>
 <span lang="en-GB">O&lt;opt&gt;&lt;val&gt;w    set option &lt;opt&gt; to &lt;val&gt; and remember it in EEPROM</span>
 <span lang="en-GB">O0              set defaults for interactive operation</span>
 <span lang="en-GB">O1              set defaults for non interactive operation</span>
-
-<span lang="en-GB">Available options (&lt;opt&gt;):</span>
-<span lang="en-GB">X    1 = enable HP3487A extension mode, this mode conflicts with GPIB commands</span>
+</pre><p class="normal-western">
+Available options (&lt;opt&gt;):</p>
+<pre lang="en-GB" class="western">X    1 = enable HP3487A extension mode, this mode conflicts with GPIB commands
      <span lang="en-GB">described in this document.</span>
      <span lang="en-GB">0 = GPIB adapter mode, disables HP3487A extension.</span>
 <span lang="en-GB">R    Receive end sequence specifies when THD, TUD and D commands would stop.</span>
@@ -121,10 +122,20 @@ Response:</p>
 <span lang="en-GB">T    Transmit end sequence specifies what to send after the data supplied</span>
      <span lang="en-GB">with D command. It accepts the same values as R option. For example,</span>
      <span lang="en-GB">7 means to send CR followed by LF with EOI.</span>
-<span lang="en-GB">...</span>
+<span lang="en-GB">I    0 = disable interactive mode. Turns off line editor and echoing of commands,</span>
+     <span lang="en-GB">disables &lt;GPIB&gt; prompt.</span>
+     <span lang="en-GB">1 = enable interactive mode.</span>
+<span lang="en-GB">C    Controller GPIB address. This address is recognised in GPIB commands so</span>
+     <span lang="en-GB">the adapter knows it's in LISTEN state.</span>
+<span lang="en-GB">D    Device GPIB address. The address of HP3478A, this is only used in HP3478 </span>
+     <span lang="en-GB">extension mode. But if this address is set to 31, the adapter will enter</span>
+     “<span lang="en-GB">plotter” mode upon start up (as if <i>P</i> command was entered).</span>
+<span lang="en-GB">B    Baud rate. 0 = 115200, 2 = 500K, 3 = 1M, 4 = 2M. Note that it depends</span>
+     <span lang="en-GB">on the USB-UART chip used, whether the setting would work.</span>
 
-<span lang="en-GB">Response:</span>
-<span lang="en-GB">	&lt;opt_help&gt;	text for  O?</span>
+</pre><p class="normal-western">
+Response:</p>
+<pre lang="en-GB" class="western">	&lt;opt_help&gt;	text for  O?
 <span lang="en-GB">	&lt;val&gt;\r\n	option value in decimal</span>
 <span lang="en-GB">	OK	option is set</span>
 <span lang="en-GB">	ERROR\r\n	incorrect command syntax or value</span>
@@ -135,7 +146,7 @@ Response:</p>
 <p class="normal-western">Prints command summary.</p>
 <pre lang="en-GB" class="western">
 </pre><p class="normal-western">
-<u>H: command list</u></p>
+<u><b>H</b>: command list</u></p>
 <p class="normal-western">Prints command history.</p>
 <pre lang="en-GB" class="western">
 </pre><p class="normal-western">
@@ -178,11 +189,10 @@ In all examples below &quot;=&gt; &quot; stands for request, &quot;&lt;=
 characters in C notation. If the example demonstrates use of
 interactive mode, dialogue is presented as it is seen on the
 terminal, no special characters are shown.</p>
-<pre lang="en-GB" class="western">
-<span lang="en-GB"><u>Example 1: data formats</u></span>
-</pre><p class="normal-western">
-Following example explains how to send EOI-terminated &quot;HELLO
-WORLD\n&quot; string in various formats. 
+<pre lang="en-GB" class="western"></pre><p class="normal-western">
+<u>Example 1: data formats</u></p>
+<p class="normal-western">Following example explains how to send
+EOI-terminated &quot;HELLO WORLD\n&quot; string in various formats. 
 </p>
 <pre lang="en-GB" class="western"></pre><p class="normal-western">
 Hex transmission:</p>
@@ -201,11 +211,10 @@ ASCII transmission:</p>
 <span lang="en-GB">=&gt; DHELLO WORLD!</span>
 <span lang="en-GB">&lt;= OK\r\n</span>
 
-
-<span lang="en-GB"><u>Example 2: getting reading from HP3478A</u></span>
 </pre><p class="normal-western">
-Following assumes default controller address 21 and multimeter
-address 23.</p>
+<u>Example 2: getting reading from HP3478A</u></p>
+<p class="normal-western">Following assumes default controller
+address 21 and multimeter address 23.</p>
 <pre lang="en-GB" class="western">
 <span lang="en-GB">&lt;GPIB&gt; CW5</span>
 <span lang="en-GB">OK</span>
@@ -213,10 +222,9 @@ address 23.</p>
 <span lang="en-GB">+1.87978E+0</span>
 <span lang="en-GB">&lt;GPIB&gt;</span>
 
-
-<span lang="en-GB"><u>Example 3: serial poll - reading status byte</u></span>
-
-<span lang="en-GB">&lt;GPIB&gt; THC183557</span>
+</pre><p class="normal-western">
+<u>Example 3: serial poll - reading status byte</u></p>
+<pre lang="en-GB" class="western" style="text-decoration: none">&lt;GPIB&gt; THC183557
 <span lang="en-GB">OK</span>
 <span lang="en-GB">&lt;GPIB&gt; THD1</span>
 <span lang="en-GB">01;</span>
