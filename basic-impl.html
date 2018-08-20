@@ -5,7 +5,7 @@
 	<title></title>
 	<meta name="generator" content="LibreOffice 5.2.7.2 (Linux)"/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2018-08-20T17:15:36.552139850"/>
+	<meta name="changed" content="2018-08-20T17:27:42.898845838"/>
 	<style type="text/css">
 		@page { margin: 0.79in }
 		p { margin-bottom: 0.1in; line-height: 120% }
@@ -67,9 +67,6 @@ a connector.</p>
 <p class="normal-western"><br/>
 
 </p>
-<p class="normal-western"><br/>
-
-</p>
 <pre class="western"><b>CONNECTIONS</b>
 </pre><p class="normal-western">
 Wire GPIB connector to ATMega 328P as shown in the table below. First
@@ -122,13 +119,17 @@ Connect ATmega 328p to UART as follows:</p>
 files </span><span lang="en-GB">can be found on the project page
 <br/>
 <a class="western" href="https://kirill-ka.github.io/hp3478ext/">https://kirill-ka.github.io/hp3478ext/</a></span></p>
-<pre class="western" style="font-weight: normal">EEPROM .eep file contains the default settings and only needed if EEPROM gets corrupt for some reason.
-<span lang="en-GB">Firmware is flashed with the following avrdude command (assuming the bootloader is pre-programmed, to atmega which is usually the case):</span>
-<span lang="en-GB">avrdude -b 57600 -c arduino -p m328p -P /dev/ttyUSB0 -U flash:w:hp3478-ext.hex</span>
-<span lang="en-GB">Change /dev/ttyUSB0 appropriately.</span>
-<span lang="en-GB">You could probably flash the hex with Arduino environment. I don't use it, so I don't know.</span></pre><p class="normal-western">
-<span style="font-weight: normal">I highly recommend setting brownout
-detection fuses to 4.</span><span style="font-weight: normal">3</span><span style="font-weight: normal">V.
+<p class="normal-western">EEPROM .eep file contains the default
+settings and only needed if EEPROM gets corrupt for some reason.</p>
+<p class="normal-western">Firmware is flashed with the following
+avrdude command (assuming the bootloader is pre-programmed, to atmega
+which is usually the case):</p>
+<pre class="western" style="font-weight: normal">avrdude -b 57600 -c arduino -p m328p -P /dev/ttyUSB0 -U flash:w:hp3478-ext.hex</pre><p class="normal-western">
+Change /dev/ttyUSB0 appropriately.</p>
+<p class="normal-western">You could probably flash the hex with
+Arduino environment. I don't use it, so I don't know.</p>
+<p class="normal-western"><span style="font-weight: normal">I highly
+recommend setting brownout detection fuses to 4.</span><span style="font-weight: normal">3</span><span style="font-weight: normal">V.
 That's because the atmega will be powered through GPIB signal lines
 when USB disconnected. Then it </span><span style="font-weight: normal">tends
 to</span><span style="font-weight: normal"> hang and </span><span style="font-weight: normal">to</span><span style="font-weight: normal">
