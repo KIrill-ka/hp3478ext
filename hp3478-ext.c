@@ -115,7 +115,7 @@
  2   | DIO2  | Data bit 2         | Talker     | PD3   1 | 3
  3   | DIO3  | Data bit 3         | Talker     | PD4   2 | 4
  4   | DIO4  | Data bit 4         | Talker     | PD5   9 | 5
- 5   | EOI   | End Of Indentity   | Talker     | PB3  15 | 11
+ 5   | EOI   | End Of Identity    | Talker     | PB3  15 | 11
  6   | DAV   | Data Valid         | Controller | PB4  16 | 12
  7   | NRFD  | Not Ready For Data | Listener   | PC0  23 | A0
  8   | NDAC  | No Data Accepted   | Listener   | PC1  24 | A1
