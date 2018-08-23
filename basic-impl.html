@@ -5,7 +5,7 @@
 	<title></title>
 	<meta name="generator" content="LibreOffice 5.2.7.2 (Linux)"/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2018-08-20T17:27:42.898845838"/>
+	<meta name="changed" content="2018-08-23T17:49:28.841646553"/>
 	<style type="text/css">
 		@page { margin: 0.79in }
 		p { margin-bottom: 0.1in; line-height: 120% }
@@ -19,11 +19,11 @@
 	</style>
 </head>
 <body lang="en-GB" dir="ltr">
-<pre class="western"><u><b>BASIC hp3478ext IMPLEMETATION</b></u></pre><p class="normal-western">
+<pre class="western"><u><b>BASIC hp3478ext IMPLEMENTATION</b></u></pre><p class="normal-western">
 <br/>
 
 </p>
-<p class="normal-western"><img src="basic-impl_html_8703069b30de65b4.jpg" name="Image1" align="left" width="672" height="240">
+<p class="normal-western"><img src="basic-impl_html_8703069b30de65b4.jpg" name="Image1" align="left" width="665" height="238">
   <br clear="left"/>
 </img>
 <br/>
@@ -32,49 +32,54 @@
 <p class="normal-western">If you just want a GPIB adapter, this basic
 variant is all you need.</p>
 <p class="normal-western">This is also the simplest way to try it as
-HP3478A extension, but then there are some limitations:</p>
+an HP 3478A extension, but then there are some limitations:</p>
+<p class="normal-western"><br/>
+
+</p>
 <p class="normal-western">1. Needs external (USB) power.</p>
-<p class="normal-western">2. External connection to HP3478 takes some
-space.</p>
+<p class="normal-western">2. External connection to an HP 3478A takes
+some space.</p>
 <p class="normal-western">3. Needs some kind of case to be used
 safely.</p>
-<p class="normal-western">4. Doesn't have a buzzer for continuity
+<p class="normal-western">4. Doesn't have a buzzer for the continuity
 tester.</p>
 <p class="normal-western"><br/>
 
 </p>
 <pre class="western"><b>PARTS LIST</b>
 </pre><p class="normal-western">
-<u>ATMega 328P module, 5V, 16MHz</u></p>
-<p class="normal-western">Arduino pro mini compatible board. The
-project doesn't use Arduino environment, just the board.</p>
-<p class="normal-western"><a class="western" href="https://www.ebay.com/sch/i.html?&amp;_nkw=arduino+pro+mini"><span lang="en-GB">https://www.ebay.com/sch/i.html?&amp;_nkw=arduino+pro+mini</span></a></p>
+<u>ATmega328P module, 5V, 16MHz</u></p>
+<p class="normal-western">An Arduino Pro Mini-compatible board. The
+project doesn't use the Arduino environment, just the board.</p>
+<p class="normal-western"><a class="western" href="https://www.ebay.com/sch/i.html?_nkw=arduino+pro+mini"><span lang="en-GB">https://www.ebay.com/sch/i.html?_nkw=arduino+pro+mini</span></a></p>
 <p class="normal-western"><br/>
 
 </p>
 <p class="normal-western"><u>USB-UART converter module</u></p>
-<p class="normal-western">For example, FTDI FT232RL-based or Silabs
-CP2102-based boards would work. It should have DTR pin and be 5V
-tolerant. You'll need FT232RL, if you want 2M baud rate.</p>
-<p class="normal-western"><a class="western" href="https://www.ebay.com/sch/i.html?&amp;_nkw=usb+uart"><span lang="en-GB">https://www.ebay.com/sch/i.html?&amp;_nkw=</span><span lang="en-GB">usb+uart</span></a></p>
+<p class="normal-western">For example, an FTDI FT232RL-based or a
+Silicon Labs CP2102-based board would work. It should have a DTR pin
+and be 5V tolerant. You'll need an FT232RL, if you want to take
+advantage of the 2M baud rate.</p>
+<p class="normal-western"><a class="western" href="https://www.ebay.com/sch/i.html?_nkw=usb+uart"><span lang="en-GB">https://www.ebay.com/sch/i.html?_nkw=usb+uart</span></a></p>
 <p class="normal-western"><br/>
 
 </p>
 <p class="normal-western"><u>GPIB cable or connector</u></p>
 <p class="normal-western">It seems to be easier to find a cable than
 a connector.</p>
-<p class="normal-western"><a class="western" href="https://www.ebay.com/sch/i.html?&amp;_nkw=gpib+connector"><span lang="en-GB">https://www.ebay.com/sch/i.html?&amp;_nkw</span><span lang="en-GB">=gpib+connector</span></a></p>
+<p class="normal-western"><a class="western" href="https://www.ebay.com/sch/i.html?_nkw=gpib+connector"><span lang="en-GB">https://www.ebay.com/sch/i.html?_nkw=gpib+connector</span></a></p>
 <p class="normal-western"><br/>
 
 </p>
 <pre class="western"><b>CONNECTIONS</b>
 </pre><p class="normal-western">
-Wire GPIB connector to ATMega 328P as shown in the table below. First
-column is for GPIB connector, the last is for 328P. It has arduino
-pin names silkscreened on the module.</p>
+Wire the GPIB connector to the ATmega328P as shown in the table,
+below. The first column contains the pin assignments for the GPIB
+connector. The last column contains the pin assignments for the 328P.
+It has Arduino pin names silkscreened on the module.</p>
 <pre class="western">
 <span lang="en-GB">/*</span>
- <span lang="en-GB">GPIB|       |                    |            | atmega  |</span>
+ <span lang="en-GB">GPIB|       |                    |            | ATmega  |</span>
  <span lang="en-GB">pin | name  | description        | direction  | pin     |    </span>
  <span lang="en-GB">----+-------+--------------------+------------+---------+</span>
  <span lang="en-GB">1   | DIO1  | Data bit 1 (LSB)   | Talker     | PD2  32 | 2</span>
@@ -106,37 +111,53 @@ pin names silkscreened on the module.</p>
      <span lang="en-GB">|BUZZER | Buzzer PWM (OC1B)  | OUT        | PB2     |</span>
 <span lang="en-GB">*/</span>
 </pre><p class="normal-western">
-Connect ATmega 328p to UART as follows:</p>
-<pre class="western" style="font-weight: normal">TX-RXO
-<span lang="en-GB">RX-TXI</span>
-<span lang="en-GB">GND-GND</span>
-<span lang="en-GB">DTR-GRN</span>
-<span lang="en-GB">5V-VCC</span>
-
-<span lang="en-GB"><b>FLASHING THE FIRMWARE</b></span>
-</pre><p class="normal-western">
-<span lang="en-GB">A link to h</span><span lang="en-GB">ex and eeprom
-files </span><span lang="en-GB">can be found on the project page
+Connect the ATmega328P to the UART module as follows:</p>
+<pre class="western"><span style="font-weight: normal">	TX	-	RXO</span>
+<span lang="en-GB">	RX	-	TXI</span>
+<span lang="en-GB">	GND	-	GND</span>
+<span lang="en-GB">	DTR	-	GRN</span>
+<span lang="en-GB">	5V	-	VCC</span></pre><p class="normal-western">
 <br/>
+
+</p>
+<pre class="western"><b>FLASHING THE FIRMWARE</b>
+</pre><p class="normal-western">
+<span lang="en-GB">A link to </span><span lang="en-GB">the </span><span lang="en-GB">h</span><span lang="en-GB">ex
+and </span><span lang="en-GB">EEPROM</span><span lang="en-GB"> files
+</span><span lang="en-GB">can be found on the project page
+</span><span lang="en-GB">at</span><span lang="en-GB"><br/>
 <a class="western" href="https://kirill-ka.github.io/hp3478ext/">https://kirill-ka.github.io/hp3478ext/</a></span></p>
-<p class="normal-western">EEPROM .eep file contains the default
-settings and only needed if EEPROM gets corrupt for some reason.</p>
-<p class="normal-western">Firmware is flashed with the following
-avrdude command (assuming the bootloader is pre-programmed, to atmega
+<p class="normal-western">The EEPROM .eep file contains the default
+settings and is only needed if the EEPROM gets corrupted for some
+reason. The firmware is flashed with the following avrdude command
+(assuming the standard bootloader is pre-programmed on the Atmega,
 which is usually the case):</p>
 <pre class="western" style="font-weight: normal">avrdude -b 57600 -c arduino -p m328p -P /dev/ttyUSB0 -U flash:w:hp3478-ext.hex</pre><p class="normal-western">
-Change /dev/ttyUSB0 appropriately.</p>
-<p class="normal-western">You could probably flash the hex with
-Arduino environment. I don't use it, so I don't know.</p>
-<p class="normal-western"><span style="font-weight: normal">I highly
-recommend setting brownout detection fuses to 4.</span><span style="font-weight: normal">3</span><span style="font-weight: normal">V.
-That's because the atmega will be powered through GPIB signal lines
-when USB disconnected. Then it </span><span style="font-weight: normal">tends
-to</span><span style="font-weight: normal"> hang and </span><span style="font-weight: normal">to</span><span style="font-weight: normal">
-corrupt it's eeprom. </span><span style="font-weight: normal">FUSE
-programming can't be done through bootloader and requires an ISP
-programmer:</span></p>
-<pre class="western">avrdude -c dragon_isp -p m328p -Uefuse:w:0x04:m
+Change /dev/ttyUSB0 to the appropriate port for your USB-UART
+converter module.</p>
+<p class="normal-western">Note: You could probably flash the hex file
+using the Arduino IDE. I don't use it, so I don't know.</p>
+<p class="normal-western"><br/>
+
+</p>
+<p class="normal-western"><span style="font-weight: normal">Important:
+</span><span style="font-weight: normal">I highly recommend setting
+</span><span style="font-weight: normal">the </span><span style="font-weight: normal">brownout
+detection fuses to 4.</span><span style="font-weight: normal">3</span><span style="font-weight: normal">V.
+Th</span><span style="font-weight: normal">e</span><span style="font-weight: normal">
+</span><span style="font-weight: normal">reason for this is that</span><span style="font-weight: normal">
+the </span><span style="font-weight: normal">AT</span><span style="font-weight: normal">mega
+will be powered </span><span style="font-weight: normal">by</span><span style="font-weight: normal">
+GPIB signal lines when </span><span style="font-weight: normal">the</span><span style="font-weight: normal">
+USB </span><span style="font-weight: normal">is </span><span style="font-weight: normal">disconnected.
+Then, it </span><span style="font-weight: normal">tends to</span><span style="font-weight: normal">
+hang and corrupt its </span><span style="font-weight: normal">EEPROM</span><span style="font-weight: normal">.
+</span><span style="font-weight: normal">Note that fuse</span><span style="font-weight: normal">
+programming can't be done </span><span style="font-weight: normal">via
+the</span><span style="font-weight: normal"> bootloader and requires
+an ISP programmer. </span><span style="font-weight: normal">The
+command for setting the fuses is as follows</span><span style="font-weight: normal">:</span></p>
+<pre class="western"><span lang="en-GB">avrdude -c dragon_isp -p m328p -Uefuse:w:0x04:m</span>
 
 </pre>
 </body>
