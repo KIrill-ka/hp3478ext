@@ -5,7 +5,7 @@
 	<title></title>
 	<meta name="generator" content="LibreOffice 5.2.7.2 (Linux)"/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2018-08-17T18:52:48.980478010"/>
+	<meta name="changed" content="2018-08-25T18:58:02.994245505"/>
 	<style type="text/css">
 		@page { margin: 0.79in }
 		p { margin-bottom: 0.1in; line-height: 120% }
@@ -17,61 +17,78 @@
 	</style>
 </head>
 <body lang="en-US" dir="ltr">
-<pre class="western"><u><b>USING hp3478ext AS UNIVERAL USB-UART-GPIB ADAPTER</b></u></pre><p class="normal-western">
+<pre class="western"><u><b>USING hp3478ext AS A UNIVERSAL USB-UART-GPIB ADAPTER</b></u></pre><p class="normal-western">
 <br/>
 
 </p>
 <pre class="western"><b>GPIB DEBUGGER</b>
 </pre><p class="normal-western">
-hp3478ext implements basic line editor and command history. While
-entering GPIB commands interactively doesn't seem to be practical for
-everyday use, it's quite useful for checking individual commands and
-learning how particular device behaves.</p>
-<p class="normal-western">Line editor keys:</p>
-<pre class="western"><b>ENTER</b> (\r)     execute command
-<b>UP</b> (\x27[A)    previous command in history list
-<b>DOWN</b> (\x27[B)  next command in history list
-<b>LEFT</b> (\x27[D)  move cursor left
-<b>RIGHT</b> (\x27[C) move cursor right
-<b>BACKSPACE</b> (\b),
-<b>DELETE</b> (\x7f)  delete character before the cursor</pre><p class="normal-western">
-When used from software, interactive mode should be turned off with
-<i><span style="font-weight: normal">O1 </span></i><span style="font-style: normal"><span style="font-weight: normal">or</span></span>
-<i>OI0</i> commands.</p>
+hp3478ext implements basic line editor and command history
+functionality. While entering GPIB commands interactively doesn't
+seem to be practical for everyday use, it's quite useful for checking
+individual commands and learning how a particular device behaves.</p>
+<p class="normal-western">Available line editor keys:</p>
+<pre class="western"><b>	ENTER</b> (\r)     	execute command
+<b>	UP</b> (\x27[A)    	previous command in the history list
+<b>	DOWN</b> (\x27[B)  	next command in the history list
+<b>	LEFT</b> (\x27[D)  	move the cursor left
+<b>	RIGHT</b> (\x27[C) 	move the cursor right
+<b>	BACKSPACE</b> (\b),
+<b>	DELETE</b> (\x7f)  	delete the character before the cursor</pre><p class="normal-western">
+<br/>
+
+</p>
+<p class="normal-western">When using hp3478ext under software
+control, interactive mode should be turned off with the <i><span style="font-weight: normal">O1
+</span></i><span style="font-style: normal"><span style="font-weight: normal">or</span></span>
+<i>OI0</i> command.</p>
+<p class="normal-western"><br/>
+
+</p>
+<pre class="western"><b>HP 3478A EXTENSION MODE</b>
+</pre><p class="normal-western">
+Originally the hp3478ext was designed as a hardware add-on to the HP
+3478A multimeter. This assumes that it can operate without a PC
+control, intercepting and responding to the 3478A's front pannel
+keys. It is called an “extension mode” throughout this document.
+When using hp3478ext as a PC interface to remotely control GPIB
+devices, the extension mode should be disabled with <i>OX0</i>, <i>O0</i>
+or <i>O1</i> command.</p>
 <p class="normal-western"><br/>
 
 </p>
 <pre class="western"><b>COMMAND REFERENCE</b>
 </pre><p class="normal-western">
 <u><b>D</b>: transmit or receive ASCII data (ATN off)</u></p>
-<p class="normal-western">Command receives data if the adapter is in
-LISTEN state. End of transmission is determined by receive end
-sequence (OR command). Absence of data (timeout) is presented with an
-empty string.</p>
-<p class="normal-western">Command transmits data if the adapter is
-not in LISTEN state. Payload immediately follows the command
-character. Depending on the OT (transmit end sequence) setting,
-transfer is terminated with EOI, \r or \n.</p>
-<p class="normal-western">Response:</p>
+<p class="normal-western">This command receives data if the adapter
+is in the LISTEN state. The end of transmission is determined by
+receiving an end sequence (OR command). An absence of data (timeout)
+is represented by an empty string.</p>
+<p class="normal-western">This command transmits data if the adapter
+is not in the LISTEN state. The payload immediately follows the
+command character. Depending on the OT (transmit end sequence)
+setting, a transfer is terminated with EOI, \r or \n.</p>
+<p class="normal-western">Responses:</p>
 <pre class="western">    OK\r\n             transmission complete
-    TIMEOUT &lt;len&gt;\r\n  time out waiting for device while transmitting
-                       &lt;len&gt; is number of bytes actually transmitted
-    \r\n               time out waiting for device while receiving
+    TIMEOUT &lt;len&gt;\r\n  timed out waiting for the device while transmitting
+                       (&lt;len&gt; is the number of bytes actually transmitted)
+    \r\n               timed out waiting for the device while receiving
     &lt;payload&gt;          data received from the device
 
 </pre><p class="normal-western">
-<u><b>C</b>: transmit ASCII command (ATN on)</u></p>
-<p class="normal-western">Command transmits ASCII bytes with ATN
-signal turned on. Transferred data is analysed to set the bus state
-as follows:</p>
-<p class="normal-western">- GPIB adapter will enter LISTEN state if
-it's listen address (+32) is in the command string.</p>
-<p class="normal-western">- GPIB adapter will exit LISTEN state if
-it's talk address (+64) or unlisten command (?) is in the string.</p>
-<p class="normal-western">Response:</p>
+<u><b>C</b>: transmit an ASCII command (ATN on)</u></p>
+<p class="normal-western">The C command transmits ASCII bytes with
+the ATN signal turned on. Transferred data is analysed to set the bus
+state as follows:</p>
+<p class="normal-western">- The GPIB adapter will enter the LISTEN
+state if its listen address (+32) is in the command string.</p>
+<p class="normal-western">- The GPIB adapter will exit the LISTEN
+state if its talk address (+64) or the unlisten command (?) is in the
+command string.</p>
+<p class="normal-western">Responses:</p>
 <pre lang="en-GB" class="western">    OK\r\n             transfer complete
-    <span lang="en-GB">TIMEOUT &lt;len&gt;\r\n  time out waiting for device</span>
-                       <span lang="en-GB">&lt;len&gt; is number of bytes actually transmitted</span>
+    <span lang="en-GB">TIMEOUT &lt;len&gt;\r\n  timed out waiting for the device</span>
+                       <span lang="en-GB">(&lt;len&gt; is the number of bytes actually transmitted)</span>
 
 </pre><p class="normal-western">
 <u><b>R</b>, <b>L</b>: control REN signal</u></p>
@@ -81,69 +98,97 @@ it's talk address (+64) or unlisten command (?) is in the string.</p>
 
 </pre><p class="normal-western">
 <u><b>I</b>: clear interface</u></p>
-<p class="normal-western">Turns IFC signal on for 1ms. GPIB adapter
-will exit LISTEN state.</p>
+<p class="normal-western">Turns the IFC signal on for 1ms. The GPIB
+adapter will exit the LISTEN state.</p>
 <p class="normal-western">Response:</p>
 <pre lang="en-GB" class="western">	OK\r\n
 
 </pre><p class="normal-western">
 <u><b>S</b>: get status</u></p>
-<p class="normal-western">Returns state of SRQ and REN lines as two
-ASCII characters 0 or 1. The third character is the GPIB adapter
-state: 0 = TALK, 1 = LISTEN. In contrast to LISTEN, in TALK state it
-actually doesn't verify whether its TALK address was sent or not.</p>
+<p class="normal-western">Returns the state of the SRQ and REN lines
+as two ASCII characters, 0 or 1. The third character is the GPIB
+adapter’s state: 0 = TALK, 1 = LISTEN. Unlike the LISTEN state, in
+the TALK state it actually doesn't verify whether its TALK address
+was sent or not.</p>
 <pre lang="en-GB" class="western">Response:
-<span lang="en-GB">	000\r\n		three characters, see above</span>
+<span lang="en-GB">	000\r\n		three characters, as described above</span>
 
 </pre><p class="normal-western">
 <u><b>P</b>: enter &quot;plotter&quot; mode</u></p>
-<p class="normal-western">In plotter mode GPIB adapter continuously
-attempts to read data from the bus. Send ESCAPE (\x27) to exit
-plotter mode.</p>
+<p class="normal-western">In plotter mode, the GPIB adapter
+continuously attempts to read data from the bus. Send an ESCAPE
+(\x27) character to exit plotter mode.</p>
 <p class="normal-western">Response:</p>
-<pre lang="en-GB" class="western">    &lt;data&gt;
+<pre class="western">    <span lang="en-GB">&lt;data&gt;			</span><span lang="en-GB">data read from the bus</span>
 
 </pre><p class="normal-western">
 <u><b>O</b>: option setting</u></p>
-<pre lang="en-GB" class="western">O&lt;opt&gt;&lt;val&gt;     set option &lt;opt&gt; to decimal &lt;val&gt;
-<span lang="en-GB">O&lt;opt&gt;          request option value</span>
-<span lang="en-GB">O?              list available options</span>
-<span lang="en-GB">O&lt;opt&gt;&lt;val&gt;w    set option &lt;opt&gt; to &lt;val&gt; and remember it in EEPROM</span>
-<span lang="en-GB">O0              set defaults for interactive operation</span>
-<span lang="en-GB">O1              set defaults for non interactive operation</span>
+<p class="normal-western">Sets various options as described below.
+The syntax for the O command is as follows:</p>
+<pre lang="en-GB" class="western">	O&lt;opt&gt;&lt;val&gt;     	set option &lt;opt&gt; to decimal &lt;val&gt;
+<span lang="en-GB">	O&lt;opt&gt;          	request an option’s current value</span>
+<span lang="en-GB">	O?              	list all available options</span>
+<span lang="en-GB">	O&lt;opt&gt;&lt;val&gt;w    	set option &lt;opt&gt; to &lt;val&gt; and save it in EEPROM</span>
+<span lang="en-GB">	O0              	set to default values for interactive operation</span>
+<span lang="en-GB">	O1              	set to default values for non-interactive operation</span>
 </pre><p class="normal-western">
 Available options (&lt;opt&gt;):</p>
-<pre lang="en-GB" class="western">X    1 = enable HP3487A extension mode, this mode conflicts with GPIB commands
-     <span lang="en-GB">described in this document.</span>
-     <span lang="en-GB">0 = GPIB adapter mode, disables HP3487A extension.</span>
-<span lang="en-GB">R    Receive end sequence specifies when THD, TUD and D commands would stop.</span>
-     <span lang="en-GB">1 = CR, 2 = LF, 4 = EOI Those bits may be ORed together, then on any of</span>
-     <span lang="en-GB">specified conditions will stop the transfer.</span>
-<span lang="en-GB">T    Transmit end sequence specifies what to send after the data supplied</span>
-     <span lang="en-GB">with D command. It accepts the same values as R option. For example,</span>
-     <span lang="en-GB">7 means to send CR followed by LF with EOI.</span>
-<span lang="en-GB">I    0 = disable interactive mode. Turns off line editor and echoing of commands,</span>
-     <span lang="en-GB">disables &lt;GPIB&gt; prompt.</span>
-     <span lang="en-GB">1 = enable interactive mode.</span>
-<span lang="en-GB">C    Controller GPIB address. This address is recognised in GPIB commands so</span>
-     <span lang="en-GB">the adapter knows it's in LISTEN state.</span>
-<span lang="en-GB">D    Device GPIB address. The address of HP3478A, this is only used in HP3478 </span>
-     <span lang="en-GB">extension mode. But if this address is set to 31, the adapter will enter</span>
-     “<span lang="en-GB">plotter” mode upon start up (as if <i>P</i> command was entered).</span>
-<span lang="en-GB">B    Baud rate. 0 = 115200, 2 = 500K, 3 = 1M, 4 = 2M. Note that it depends</span>
-     <span lang="en-GB">on the USB-UART chip used, whether the setting would work.</span>
+<pre class="western"><span lang="en-GB">	X    			</span><span lang="en-GB">Enables or disables </span><span lang="en-GB">the </span><span lang="en-GB">HP 3478A</span><span lang="en-GB"> extension mode.</span>
 
-</pre><p class="normal-western">
-Response:</p>
-<pre lang="en-GB" class="western">	&lt;opt_help&gt;	text for  O?
-<span lang="en-GB">	&lt;val&gt;\r\n	option value in decimal</span>
-<span lang="en-GB">	OK	option is set</span>
-<span lang="en-GB">	ERROR\r\n	incorrect command syntax or value</span>
-<span lang="en-GB">	WRONG OPTION\r\n	unknown option</span>
+<span lang="en-GB">				1 = enable the HP 3478A extension mode. This mode conflicts</span>
+<span lang="en-GB">				with the GPIB commands described in this document.</span>
+
+     <span lang="en-GB">				0 = hp3478ext will not attempt to connect to HP 3478A </span>
+<span lang="en-GB">				multimeter. This setting is assumed when using</span>
+<span lang="en-GB">				hp3478ext as a general purpose GPIB adapter.</span>
+
+<span lang="en-GB">	R    			Receive end sequence, which specifies when the THD, TUD and</span>
+<span lang="en-GB">				D commands will stop.</span>
+
+     <span lang="en-GB">				1 = CR, 2 = LF, 4 = EOI</span>
+
+<span lang="en-GB">				These bits may be ORed together so that any of the</span>
+     <span lang="en-GB">				specified conditions will stop the transfer.</span>
+
+<span lang="en-GB">	T    			Transmit end sequence, which specifies what to send after</span>
+<span lang="en-GB">				the data is supplied using the D command. It accepts the</span>
+<span lang="en-GB">				same values as the R option. For example, 7 means to send</span>
+<span lang="en-GB">				CR followed by LF with EOI.</span>
+
+<span lang="en-GB">	I    			Enable or disable interactive mode.</span>
+
+<span lang="en-GB">				0 = disable interactive mode. Turns off the line editor and</span>
+<span lang="en-GB">				echoing of commands, which disables the &lt;GPIB&gt; prompt.</span>
+
+     <span lang="en-GB">				1 = enable interactive mode.</span>
+
+<span lang="en-GB">	C    			Controller GPIB address. This address is recognised in GPIB</span>
+<span lang="en-GB">				commands so that the adapter knows it's in the LISTEN</span>
+<span lang="en-GB">				state.</span>
+
+<span lang="en-GB">	D    			Device GPIB address (the address of the HP 3478A). This is</span>
+<span lang="en-GB">				only used in hp3478ext’s extension mode. However, if this</span>
+<span lang="en-GB">				address is set to 31, the adapter will enter “plotter” mode</span>
+<span lang="en-GB">				upon start up (as if the <i>P</i> command was entered).</span>
+
+<span lang="en-GB">	B    			Baud rate.</span>
+
+<span lang="en-GB">				0 = 115200, 2 = 500K, 3 = 1M, 4 = 2M.</span>
+
+<span lang="en-GB">				Note that the maximum available rate depends on the</span>
+<span lang="en-GB">				capabilities of the USB-UART chip that is being used.</span>
+
+Responses:
+
+<span lang="en-GB">	&lt;opt_help&gt;        text returned from the O? command</span>
+<span lang="en-GB">	&lt;val&gt;\r\n         option value in decimal</span>
+<span lang="en-GB">	OK                option is set</span>
+<span lang="en-GB">	ERROR\r\n         incorrect command syntax or value</span>
+<span lang="en-GB">	WRONG OPTION\r\n  unknown option</span>
 
 </pre><p class="normal-western">
 <u><b>?</b>: quick help</u></p>
-<p class="normal-western">Prints command summary.</p>
+<p class="normal-western">Prints the command summary.</p>
 <pre lang="en-GB" class="western">
 </pre><p class="normal-western">
 <u><b>H</b>: command list</u></p>
@@ -151,83 +196,87 @@ Response:</p>
 <pre lang="en-GB" class="western">
 </pre><p class="normal-western">
 <u><b>T</b>: binary and hex transfer commands</u></p>
-<pre lang="en-GB" class="western">THC      transmit hex command
-<span lang="en-GB">TBD      transmit binary data</span>
-<span lang="en-GB">TBD&lt;len&gt; receive binary data</span>
-<span lang="en-GB">THD      transmit hex data</span>
-<span lang="en-GB">THD&lt;len&gt; receive hex data</span>
+<pre lang="en-GB" class="western">	THC      		transmit hex command
+<span lang="en-GB">	TBD      		transmit binary data</span>
+<span lang="en-GB">	TBD&lt;len&gt; 		receive binary data</span>
+<span lang="en-GB">	THD      		transmit hex data</span>
+<span lang="en-GB">	THD&lt;len&gt; 		receive hex data</span>
 </pre><p class="normal-western">
 Data transmit or receive operation is determined by the LISTEN state
-of the adapter. I.e. T is interpreted as receive, if adapter is
-addressed as listener. THC always transmits. &lt;len&gt; is optional.
-It is one byte hex value and specifies maximum number of characters
-to receive.</p>
+of the adapter. For example, T is interpreted as receive, if the
+adapter is addressed as the listener. THC always transmits. (&lt;len&gt;
+is optional. It is one byte hex value and specifies maximum number of
+characters to receive.)</p>
 <p class="normal-western"><i>HEX data</i> is an arbitrary length hex
-string terminated with an optional ; and \r\n The line is terminated
-with EOI by default , so ; means that there is no EOI. When
-transmitting, whole command buffer is limited by 64 bytes. The
-maximum payload size is (64 - sizeof(&quot;THD&quot;) - sizeof(&quot;\r&quot;))
+string terminated with an optional ; and \r\n. The line is terminated
+with EOI by default, so ; means that there is no EOI. When
+transmitting, the command buffer is limited to 64 bytes. The maximum
+payload size is (64 - sizeof(&quot;THD&quot;) - sizeof(&quot;\r&quot;))
 = 30 bytes. There's no limit on the received hex string length.</p>
 <p class="normal-western"><i>Binary data</i> consists of blocks
-prefixed with one-byte length. Block length is up to 127 bytes. High
-order bit of length byte represents EOI at the end of the block.
-Transfer is terminated with 0 byte (i.e. length = 0).</p>
-<p class="normal-western">Response:</p>
-<pre lang="en-GB" class="western">   ERROR\r\n         wrong command syntax
-   <span lang="en-GB">TIMEOUT &lt;len&gt;\r\n time out while transmitting </span>
-                     <span lang="en-GB">(&lt;len&gt; = number of bytes sent in decimal)</span>
-   <span lang="en-GB">OK\r\n            send complete for TH commands</span>
-   <span lang="en-GB">;\r\n             time out receiving data for THD command </span>
-   <span lang="en-GB">&lt;payload&gt;         binary or hex payload (see below)</span>
-   <span lang="en-GB">&lt;txlen&gt;           status byte = number of bytes transmitted for each block (see example below)</span>
+prefixed with a one-byte length value. The block length is up to 127
+bytes. The high-order bit of the length byte represents EOI at the
+end of the block. The transfer is terminated with a 0 byte (i.e.,
+length = 0).</p>
+<p class="normal-western">Responses:</p>
+<pre class="western"><span lang="en-GB">	ERROR\r\n         </span><span lang="en-GB">incorrect</span><span lang="en-GB"> command syntax</span>
+<span lang="en-GB">	TIMEOUT &lt;len&gt;\r\n timed out while transmitting </span>
+<span lang="en-GB">	                  (&lt;len&gt; = number of bytes sent, in decimal)</span>
+<span lang="en-GB">	OK\r\n            send is complete (applies to TH commands)</span>
+<span lang="en-GB">	;\r\n             timed out receiving data for the THD command </span>
+<span lang="en-GB">	&lt;payload&gt;         binary or hex payload (see example below)</span>
+<span lang="en-GB">	&lt;txlen&gt;           status byte = number of bytes transmitted for each block</span>
+<span lang="en-GB">	                  (see example below)</span>
 
 
 <span lang="en-GB"><b>EXAMPLES</b></span>
 </pre><p class="normal-western">
-In all examples below &quot;=&gt; &quot; stands for request, &quot;&lt;=
-&quot; stands for response. \-escaped characters are non-printable
-characters in C notation. If the example demonstrates use of
-interactive mode, dialogue is presented as it is seen on the
-terminal, no special characters are shown.</p>
+In all of the examples below, “=&gt;” represents a request and
+“&lt;=” represents a response. Characters that are escaped with a
+backslash “\” are non-printable characters in C notation. If the
+example demonstrates use of interactive mode, dialogue is presented
+as it is seen on the terminal (<font face="Liberation Mono"><font size="2" style="font-size: 10pt">i.e.</font></font>,
+no special characters are shown).</p>
 <pre lang="en-GB" class="western"></pre><p class="normal-western">
 <u>Example 1: data formats</u></p>
-<p class="normal-western">Following example explains how to send
-EOI-terminated &quot;HELLO WORLD\n&quot; string in various formats. 
+<p class="normal-western">The following example explains how to send
+an EOI-terminated &quot;HELLO WORLD\n&quot; string in various
+formats. 
 </p>
 <pre lang="en-GB" class="western"></pre><p class="normal-western">
 Hex transmission:</p>
-<pre lang="en-GB" class="western">=&gt; THD48454c4c4f20;\r
-<span lang="en-GB">&lt;= OK\r\n</span>
-<span lang="en-GB">=&gt; THD574f524c44210a\r</span>
-<span lang="en-GB">&lt;= OK\r\n</span>
+<pre lang="en-GB" class="western">	=&gt; THD48454c4c4f20;\r
+<span lang="en-GB">	&lt;= OK\r\n</span>
+<span lang="en-GB">	=&gt; THD574f524c44210a\r</span>
+<span lang="en-GB">	&lt;= OK\r\n</span>
 </pre><p class="normal-western">
 Binary transmission:</p>
-<pre lang="en-GB" class="western">=&gt; TBD\r\x06HELLO \x87WORLD!\n
-<span lang="en-GB">&lt;= \x06\x07</span>
+<pre lang="en-GB" class="western">	=&gt; TBD\r\x06HELLO \x87WORLD!\n
+<span lang="en-GB">	&lt;= \x06\x07</span>
 </pre><p class="normal-western">
 ASCII transmission:</p>
-<pre lang="en-GB" class="western">=&gt; OT6\r\n
-<span lang="en-GB">&lt;= OK\r\n</span>
-<span lang="en-GB">=&gt; DHELLO WORLD!</span>
-<span lang="en-GB">&lt;= OK\r\n</span>
+<pre lang="en-GB" class="western">	=&gt; OT6\r\n
+<span lang="en-GB">	&lt;= OK\r\n</span>
+<span lang="en-GB">	=&gt; DHELLO WORLD!</span>
+<span lang="en-GB">	&lt;= OK\r\n</span>
 
 </pre><p class="normal-western">
-<u>Example 2: getting reading from HP3478A</u></p>
-<p class="normal-western">Following assumes default controller
-address 21 and multimeter address 23.</p>
+<u>Example 2: getting a reading from the HP 3478A</u></p>
+<p class="normal-western">This example assumes a default controller
+address of 21 and multimeter address of 23.</p>
 <pre lang="en-GB" class="western">
-<span lang="en-GB">&lt;GPIB&gt; CW5</span>
-<span lang="en-GB">OK</span>
-<span lang="en-GB">&lt;GPIB&gt; D</span>
-<span lang="en-GB">+1.87978E+0</span>
-<span lang="en-GB">&lt;GPIB&gt;</span>
+<span lang="en-GB">	&lt;GPIB&gt; CW5</span>
+<span lang="en-GB">	OK</span>
+<span lang="en-GB">	&lt;GPIB&gt; D</span>
+<span lang="en-GB">	+1.87978E+0</span>
+<span lang="en-GB">	&lt;GPIB&gt;</span>
 
 </pre><p class="normal-western">
-<u>Example 3: serial poll - reading status byte</u></p>
-<pre lang="en-GB" class="western" style="text-decoration: none">&lt;GPIB&gt; THC183557
-<span lang="en-GB">OK</span>
-<span lang="en-GB">&lt;GPIB&gt; THD1</span>
-<span lang="en-GB">01;</span>
-<span lang="en-GB">&lt;GPIB&gt; THC19</span></pre>
+<u>Example 3: serial polling - reading the status byte</u></p>
+<pre lang="en-GB" class="western" style="text-decoration: none">	&lt;GPIB&gt; THC183557
+<span lang="en-GB">	OK</span>
+<span lang="en-GB">	&lt;GPIB&gt; THD1</span>
+<span lang="en-GB">	01;</span>
+<span lang="en-GB">	&lt;GPIB&gt; THC19</span></pre>
 </body>
 </html>
