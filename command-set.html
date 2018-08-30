@@ -5,7 +5,7 @@
 	<title></title>
 	<meta name="generator" content="LibreOffice 5.2.7.2 (Linux)"/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2018-08-25T22:57:21.962099122"/>
+	<meta name="changed" content="2018-08-30T12:45:54.956701715"/>
 	<style type="text/css">
 		@page { margin: 0.79in }
 		p { margin-bottom: 0.1in; line-height: 120% }
@@ -47,13 +47,14 @@ control, interactive mode should be turned off with the <i><span style="font-wei
 </p>
 <pre class="western"><b>HP 3478A EXTENSION MODE</b>
 </pre><p class="normal-western">
-Originally the hp3478ext was designed as a hardware add-on to the HP
-3478A multimeter. This assumes that ATmega328P's firmware can operate
-without a PC control, intercepting and responding to the 3478A's
-front pannel keys. Such stand-alone operation is called an “extension
-mode” throughout this document. When using hp3478ext as a PC
-interface to remotely control GPIB devices, the extension mode should
-be disabled with <i>OX0</i>, <i>O0</i> or <i>O1</i> command.</p>
+Originally, the hp3478ext was designed as a hardware add-on to the HP
+3478A multimeter. This assumes that the ATmega328P's firmware can
+operate without PC control, intercepting and responding to the
+3478A's front panel keys. Such stand-alone operation is called an
+“extension mode” throughout this document. When using hp3478ext
+as a PC interface to remotely control GPIB devices, the extension
+mode should be disabled with <i>OX0</i>, <i>O0</i> or <i>O1</i>
+command.</p>
 <p class="normal-western"><br/>
 
 </p>
@@ -138,7 +139,7 @@ Available options (&lt;opt&gt;):</p>
 <span lang="en-GB">				1 = enable the HP 3478A extension mode. This mode conflicts</span>
 <span lang="en-GB">				with the GPIB commands described in this document.</span>
 
-     <span lang="en-GB">				0 = hp3478ext will not attempt to connect to HP 3478A </span>
+     <span lang="en-GB">				0 = hp3478ext will not attempt to connect to the HP 3478A </span>
 <span lang="en-GB">				multimeter. This setting is assumed when using</span>
 <span lang="en-GB">				hp3478ext as a general purpose GPIB adapter.</span>
 
