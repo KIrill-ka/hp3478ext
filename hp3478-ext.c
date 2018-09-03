@@ -880,6 +880,8 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                     break;
                    }
                    result = gpib_transmit(buf+1, len-1, gpib_end_seq_tx); 
+                   if(gpib_end_seq_tx & GPIB_END_CR) len++;
+                   if(gpib_end_seq_tx & GPIB_END_LF) len++;
                    if (result == len-1) printf_P(PSTR("OK\r\n"));
                    else printf_P(PSTR("TIMEOUT %d\r\n"), (unsigned) result);
                    break;
