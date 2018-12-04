@@ -78,7 +78,7 @@ if {![info exists hp_port] || ![info exists rfe_port]} {
 source hp3478ext-gpib.tcl
 source rfesiggen.tcl
 
-adapter_init $hp_port $converter_addr
+gpibif_init $hp_port $converter_addr
 
 rfegen_open $rfe_port
 gpib_send $hp_addr "NORMLIZE OFF"
@@ -167,5 +167,5 @@ if {$norm} {
  gpib_send $hp_addr "NORMLIZE ON"
 }
 
-adapter_send_cmd L
+gpibif_send_cmd L
 
