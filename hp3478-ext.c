@@ -165,8 +165,8 @@ static void cfg_data_in(void) {
   DDRB &= ~(_BV(PB0)|_BV(PB1));
 }
 static void cfg_data_out(void) {
-  DDRD |= (_BV(PD2)|_BV(PD3)|_BV(PD4)|_BV(PD5)|_BV(PD6)|_BV(PD7));
-  DDRB |= (_BV(PB0)|_BV(PB1));
+  /* DDRD |= (_BV(PD2)|_BV(PD3)|_BV(PD4)|_BV(PD5)|_BV(PD6)|_BV(PD7));
+     DDRB |= (_BV(PB0)|_BV(PB1)); */
 }
 
 static uint8_t data_get(void) {
@@ -1720,27 +1720,38 @@ hp3478_cmp_readings(const struct hp3478_reading *r1, const struct hp3478_reading
  int32_t rr2 = r2->value;
  int8_t e1 = r1->exp+r1->dot;
  int8_t e2 = r2->exp+r2->dot;
+ int8_t res_sign = 1;
 
  if(rr1 < 0 && rr2 >= 0) return -1;
- if(rr2 >= 0 && rr1 < 0) return 1;
- if(e1 >= e2) 
+ if(rr2 < 0 && rr1 >= 0) return 1;
+
+ if(e1 < e2) {
+  uint8_t e_tmp;
+  int32_t rr_tmp;
+  e_tmp = e1; e1 = e2; e2 = e_tmp;
+  rr_tmp = rr1; rr1 = rr2; rr2 = rr_tmp;
+  res_sign = -res_sign;
+ }
+
+ if(rr1 >= 0) 
   while(1) {
-    if(rr1 > rr2) return 1;
-    if(e1 == e2) {
-     if(rr1 == rr2) return 0;
-     return -1;
-    }
-    rr1 *= 10;
-    e1--;
+   if(rr1 > rr2) return res_sign;
+   if(e1 == e2) {
+    if(rr1 == rr2) return 0;
+    return -res_sign;
+   }
+   rr1 *= 10;
+   e1--;
   }
+
  while(1) {
-    if(rr2 > rr1) return -1;
-    if(e1 == e2) {
-     if(rr1 == rr2) return 0;
-     return 1;
-    }
-    rr2 *= 10;
-    e2--;
+  if(rr1 < rr2) return -res_sign;
+  if(e1 == e2) {
+   if(rr1 == rr2) return 0;
+   return res_sign;
+  }
+  rr1 *= 10;
+  e1--;
  }
 }
 
