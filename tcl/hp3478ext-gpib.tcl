@@ -26,13 +26,27 @@ proc gpibif_init {path addr {spd 500000} {bootloader_escape_method exit}} {
   after 1550
  } else {
   # no bootloader or DTR is disabled/disconnected
+  fconfigure $gpib_fd -blocking 0
+  puts -nonewline $gpib_fd "\r"
+  after 50
+  read $gpib_fd
+  # using O1 command to detect the baud rate
+  puts -nonewline $gpib_fd "O1\r"
+  after 50
+  set r [read $gpib_fd]
+  if {$r ne "O1\r\n" && $r ne "OK\r\n"} {
+   # assume it's already configured to the baud rate
+   fconfigure $gpib_fd -mode $spd,n,8,1
+   puts -nonewline $gpib_fd "\r"
+   after 50
+   read $gpib_fd
+  }
  }
  
  fconfigure $gpib_fd -blocking 0
  # read garbage and <GPIB> prompt
  read $gpib_fd
  fconfigure $gpib_fd -blocking 1
-
  puts -nonewline $gpib_fd "O1\r"
  set r [gpibif_get_resp]
  if {$r eq "O1\r"} {
@@ -91,6 +105,7 @@ proc gpib_send {dev c} {
  set l [string length $c]
  set p 0
  set e 0
+ set retrycnt 0
  puts -nonewline $gpib_fd "TBD\r"
  while {$l != 0} {
   if {$l > 60} {set tl 60} else {set tl $l; set e 0x80}
@@ -104,10 +119,18 @@ proc gpib_send {dev c} {
   set res [read $gpib_fd 1]
   binary scan $res cu r
   if {$r != $tl} {
-   error "write length $r < $tl @$p"
+   #if {$r == 0 && $retrycnt > 10} {
+    error "write length $r < $tl @$p"
+   #} else {
+   # puts stderr "warining: $r < $tl @$p, retrying"
+   # if {$r == 0} {incr retrycnt}
+   # after 500
+   #}
   }
-  incr l -$tl
-  incr p $tl
+  #after 30
+  
+  incr l -$r
+  incr p $r
  }
  puts -nonewline $gpib_fd [binary format c 0]
 }
