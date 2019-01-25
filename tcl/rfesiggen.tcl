@@ -8,14 +8,22 @@ proc rfegen_open {dev} {
  fconfigure $rfegen_fd -translation binary
 }
 
-proc rfegen_cw {freq_khz pwr} {
- global rfegen_fd
+proc rfegen_cvt_pwr {pwr_lev hpwr_var pwr_var} {
+ upvar $hpwr_var hpwr $pwr_var pwr
+
+ set pwr $pwr_lev
  if {$pwr > 3} {
    set hpwr 1
-   incr pwr -3
+   incr pwr -4
  } else {
    set hpwr 0
  }
+}
+
+proc rfegen_cw {freq_khz pwr} {
+ global rfegen_fd
+
+ rfegen_cvt_pwr $pwr hpwr pwr
 
  set cmd [binary format "aca*a7aaaa" # 18 C3-F: [format %07d $freq_khz] , $hpwr , $pwr]
  puts -nonewline $rfegen_fd $cmd
@@ -23,12 +31,8 @@ proc rfegen_cw {freq_khz pwr} {
 
 proc rfegen_track_start {start_freq_khz n_steps step_khz pwr} {
  global rfegen_fd
- if {$pwr > 3} {
-   set hpwr 1
-   incr pwr -3
- } else {
-   set hpwr 0
- }
+
+ rfegen_cvt_pwr $pwr hpwr pwr
 
  set cmd [binary format "aca*a7aaaaaa4aa7" # 31 C3-T: [format %07d $start_freq_khz] , $hpwr , $pwr , [format %04d $n_steps] , [format %07d $step_khz]]
  puts -nonewline $rfegen_fd $cmd
