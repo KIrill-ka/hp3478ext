@@ -184,12 +184,12 @@ static void data_put(uint8_t d) {
   SET_PORT_PIN(DDRB, _BV(PB1), d&128);
 }
 
-static inline void eoi_set(x) {SET_PORT_PIN(DDR(EOI_PORT), EOI, (x));}
-static inline void dav_set(x) {SET_PORT_PIN(DDR(DAV_PORT), DAV, (x));}
-static inline void nrfd_set(x) {SET_PORT_PIN(DDR(NRFD_PORT), NRFD, (x));}
-static inline void ndac_set(x) {SET_PORT_PIN(DDR(NDAC_PORT), NDAC, (x));}
-static inline void SetIFC(x) {SET_PORT_PIN(DDR(IFC_PORT), IFC, !(x));}
-static inline void set_atn(x) {
+static inline void eoi_set(uint8_t x) {SET_PORT_PIN(DDR(EOI_PORT), EOI, (x));}
+static inline void dav_set(uint8_t x) {SET_PORT_PIN(DDR(DAV_PORT), DAV, (x));}
+static inline void nrfd_set(uint8_t x) {SET_PORT_PIN(DDR(NRFD_PORT), NRFD, (x));}
+static inline void ndac_set(uint8_t x) {SET_PORT_PIN(DDR(NDAC_PORT), NDAC, (x));}
+static inline void SetIFC(uint8_t x) {SET_PORT_PIN(DDR(IFC_PORT), IFC, !(x));}
+static inline void set_atn(uint8_t x) {
  SET_PORT_PIN(DDR(ATN_PORT), ATN, (x));
  if(x) _delay_us(0.5); /* T7 in ieee488 spec */
 }
