@@ -16,7 +16,7 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
  switch -- [lindex $argv $i] {
   -analyser_address - -aa {
        incr i; set hp_addr [lindex $argv $i] }
-  -generator_address - -ga {
+  -controller_address - -ca {
        incr i; set converter_addr [lindex $argv $i] }
   -analyser - -a {
        incr i; set hp_port [lindex $argv $i] }
@@ -50,6 +50,18 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
   }
  }
 }
+
+# convert start_freq & end_freq to KHz
+array set freq_mult {k 1 khz 1 K 1 KHZ 1 KHz 1 kHz 1
+                     M 1000 MHz 1000  MHZ 1000
+                     g 1000000 ghz 1000000 G 1000000 GHz 1000000 gHz 1000000
+                     h 0.001 hz 0.001 H 0.001 Hz 0.001}
+regexp -nocase {([0-9.]*)([gmkhz]*)} $end_freq dummy end_freq end_freq_un
+regexp -nocase {([0-9.]*)([gmkhz]*)} $start_freq dummy start_freq start_freq_un
+if {$end_freq_un eq ""} { set end_freq_un Hz }
+if {$start_freq_un eq ""} { set start_freq_un $end_freq_un }
+set start_freq [expr {int($start_freq * $freq_mult($start_freq_un))}] 
+set end_freq [expr {int($end_freq * $freq_mult($end_freq_un))}] 
 
 set step_size [expr {($end_freq-$start_freq)/($npts-1)}]
 
@@ -131,7 +143,7 @@ gpib_send $hp_addr "FA ${start_freq}KHZ"
 if {$norm} {
  # the following calls to STORETHRU/TS are only needed to
  # to avoid BAD NORM error
- gpib_send $hp_addr "STORETHRU"
+ gpib_send $hp_addr "STORETHRU;ST 200MS;RB 1MHZ;"
  # although it dislays "THRU STORED" immediately
  # if we don't TS, it would wipe TRACE B afterwards
  gpib_send $hp_addr "TS;DONE?"
@@ -151,13 +163,13 @@ if {$norm} {
  gpib_send $hp_addr "CLRW TRA"
  gpib_send $hp_addr "CONTS"
 } else {
- gpib_send $hp_addr "VIEW TRA"
+ gpib_send $hp_addr "VIEW TRA;"
  gpib_send $hp_addr "TRA $res1"
  gpib_send $hp_addr "DONE?"
  while {[gpib_recv $hp_addr] != 1} { } 
 #gpib_send $hp_addr "TRA?"
 #puts [gpib_recv $hp_addr]
- gpib_send $hp_addr "CONTS"
+ gpib_send $hp_addr "CONTS;"
 }
 
 if {$norm} {
