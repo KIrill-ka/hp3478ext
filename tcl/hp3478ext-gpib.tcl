@@ -34,12 +34,14 @@ proc gpibif_init {path addr {spd 500000} {bootloader_escape_method exit}} {
   puts -nonewline $gpib_fd "O1\r"
   after 50
   set r [read $gpib_fd]
-  if {$r ne "O1\r\n" && $r ne "OK\r\n"} {
-   # assume it's already configured to the baud rate
+  if {$r ne "O1\r\nOK\r\n" && $r ne "OK\r\n"} {
+   # assume it's already configured for the baud rate
    fconfigure $gpib_fd -mode $spd,n,8,1
    puts -nonewline $gpib_fd "\r"
    after 50
    read $gpib_fd
+  } else {
+   #puts "115200 detected"
   }
  }
  
@@ -119,15 +121,16 @@ proc gpib_send {dev c} {
   set res [read $gpib_fd 1]
   binary scan $res cu r
   if {$r != $tl} {
-   #if {$r == 0 && $retrycnt > 10} {
+   puts -nonewline $gpib_fd [binary format c 0]
+   if {$r == 0 && $retrycnt > 10} {
     error "write length $r < $tl @$p"
-   #} else {
-   # puts stderr "warining: $r < $tl @$p, retrying"
-   # if {$r == 0} {incr retrycnt}
-   # after 500
-   #}
+   } else {
+    puts stderr "warining: $r < $tl @$p, retrying"
+    if {$r == 0} {incr retrycnt}
+    puts -nonewline $gpib_fd [binary format c 0]
+    puts -nonewline $gpib_fd "TBD\r"
+   }
   }
-  #after 30
   
   incr l -$r
   incr p $r
