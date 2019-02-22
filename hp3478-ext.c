@@ -417,6 +417,7 @@ gpib_transmit(const uint8_t *buf, uint8_t len, uint8_t end)
     while (nrfd()) { /* waiting for high on NRFD */
       if ((uint8_t)((uint8_t)msec_count-ts) > GPIB_MAX_TRANSMIT_TIMEOUT_mS) {
         eoi_set(0);
+        cfg_data_in();
         return i;
       }
     }
@@ -427,6 +428,7 @@ gpib_transmit(const uint8_t *buf, uint8_t len, uint8_t end)
       if ((uint8_t)((uint8_t)msec_count-ts) > GPIB_MAX_TRANSMIT_TIMEOUT_mS) {
         eoi_set(0);
         dav_set(0);
+        cfg_data_in();
         return i;
       }
     }
@@ -434,7 +436,7 @@ gpib_transmit(const uint8_t *buf, uint8_t len, uint8_t end)
     dav_set(0);
   }
   eoi_set(0);
-
+  cfg_data_in();
   return i;
 }
 
