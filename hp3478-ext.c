@@ -2199,15 +2199,24 @@ hp3478a_handler(uint8_t ev)
                 return 0xffff;
          case HP3478_CONT:
                 if(sb & HP3478_SB_DREADY) {
+                  hp3478_get_status(st);
+                  if(st[0] != (HP3478_ST_RANGE2|HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM)
+                     || (st[1]&7) != HP3478_ST_INT_TRIGGER) {
+                   hp3478_cont_fini();
+                   state = HP3478_IDLE;
+                   return TIMEOUT_INF;
+                  }
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
                   if(reading.value < 100000) {
                    if(!buzzer) {
                     if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT;
                     beep(1);
                    }
-                  } else if(buzzer) {
-                   if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) HP3478_REINIT;
-                   beep(0);
+                  } else {
+                   if(buzzer) {
+                    if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) HP3478_REINIT;
+                    beep(0);
+                   }
                   }
                 }
                 return TIMEOUT_INF;
