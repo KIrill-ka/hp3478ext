@@ -30,7 +30,10 @@ CFLAGS=  $(OFLAG) -g -Wall -mmcu=$(MCU) -ffreestanding -Wa,-ahlms=$(<:.c=.lst)
     --change-section-lma .eeprom=0 -O ihex $< $@
 # --no-change-warnings
 
-all:	$(NAME).hex $(NAME).eep
+$(NAME)-dc-buzzer.eep: $(NAME).out
+	./eeprom_set_var.tcl $< $@ buzz_period_eep 0
+
+all:	$(NAME).hex $(NAME).eep $(NAME)-dc-buzzer.eep
 
 OBJS = $(NAME).o uart.o
 
