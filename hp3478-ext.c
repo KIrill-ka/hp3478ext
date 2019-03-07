@@ -105,6 +105,8 @@
 #define GPIB_BUF_SIZE 127
 #define GPIB_MAX_RECEIVE_TIMEOUT_mS 200
 #define GPIB_MAX_TRANSMIT_TIMEOUT_mS 200
+#define BUZZ_DEFAULT_PERIOD 10000
+#define BUZZ_DEFAULT_DUTY 15
 
 /* PIN assignment */
 /*
@@ -159,6 +161,8 @@
 
 #define LED _BV(PB5)
 #define LED_PORT B
+#define BUZZ _BV(PB2)
+#define BUZZ_PORT B
 
 static void cfg_data_in(void) {
   DDRD &= ~(_BV(PD2)|_BV(PD3)|_BV(PD4)|_BV(PD5)|_BV(PD6)|_BV(PD7));
@@ -255,6 +259,8 @@ uint8_t EEMEM dummy1_eep = 0;
 uint8_t EEMEM gpib_end_seq_rx_eep = GPIB_END_EOI;
 uint8_t EEMEM gpib_end_seq_tx_eep = GPIB_END_EOI;
 uint8_t EEMEM uart_baud_eep = UART_115200;
+uint16_t EEMEM buzz_period_eep = BUZZ_DEFAULT_PERIOD; 
+uint8_t EEMEM buzz_duty_eep = BUZZ_DEFAULT_DUTY; 
 
 #define GPIB_LISTEN 1
 #define GPIB_TALK   2
@@ -270,12 +276,15 @@ static char cmd_hist[CMD_BUF_SIZE*CMD_HISTORY_SIZE];
 static char cmd_hist_len = 0;
 
 enum led_mode {LED_OFF, LED_SLOW, LED_FAST};
-static enum led_mode led_state;
+static enum led_mode led_state = LED_OFF;
 
 static uint8_t hp3478_ext_enable;
 
 static uint8_t uart_echo;
-static uint8_t uart_baud = UART_115200;
+static uint8_t uart_baud;
+
+static uint16_t buzz_period;
+static uint8_t buzz_duty;
 
 volatile uint16_t msec_count;
 
@@ -300,18 +309,28 @@ static inline void led_toggle(void) {PIN(LED_PORT) |= LED;}
 
 static uint8_t buzzer = 0;
 static void 
-beep(uint8_t on)
+beep(uint16_t period, uint8_t duty)
 {
- buzzer = on;
- if(on) {
-  DDRB |= _BV(PB2);
-  TCCR1B |= _BV(CS10);
- } else {
-  TCCR1B &= ~_BV(CS10);
-  DDRB &= ~_BV(PB2); /* Occasionally some phantom signal remaining on the 
-                        pin after timer stopped. Disconnecting it does help. */
+ if(duty) {
+  if(!period) PORT(BUZZ_PORT) |= BUZZ;
+  else {
+   OCR1A = period;
+   OCR1B = (uint32_t)period*duty >> 8;
+   TCCR1B |= _BV(CS10);
+  }
  }
+ buzzer = 1;
 }
+
+static void 
+beep_off(void)
+{
+ buzzer = 0;
+
+ TCCR1B &= ~_BV(CS10);
+ PORT(BUZZ_PORT) &= ~BUZZ;
+}
+
 static int 
 uart_putchar(char ch, FILE* file)
 {
@@ -749,20 +768,86 @@ get_read_length(const uint8_t *buf, uint8_t len)
  return l;
 }
 
+
+struct opt_info {
+ char name[16];
+ uint16_t max;
+ uint16_t def;
+#define OPT_INFO_W16 1
+ uint8_t flags;
+ void *addr;
+ void *addr_eep;
+};
+
+const struct opt_info PROGMEM opts[] = {
+ {.name = "X",          
+  .max = 1, .def = 0, 
+  .addr = &hp3478_ext_enable,    .addr_eep = &hp3478_ext_en_eep},
+ {.name = "I",
+  .max = 1, .def = 1,
+  .addr = &uart_echo,            .addr_eep = &uart_echo_eep},
+ {.name = "C",
+  .max = 30, .def = GPIB_MY_DEFAULT_ADDRESS,
+  .addr = &gpib_my_addr,         .addr_eep = &gpib_my_addr_eep},
+ {.name = "D",
+  .max = 31, .def = GPIB_HP3478_DEFAULT_ADDRESS,
+  .addr = &gpib_hp3478_addr,     .addr_eep = &gpib_hp3478_addr_eep},
+ {.name = "R",
+  .max = 7,  .def = GPIB_END_EOI,
+  .addr = &gpib_end_seq_rx,      .addr_eep = &gpib_end_seq_rx_eep},
+ {.name = "T",
+  .max = 7,  .def = GPIB_END_EOI,
+  .addr = &gpib_end_seq_tx,      .addr_eep = &gpib_end_seq_tx_eep},
+ {.name = "B",
+  .max = 4, .def = UART_115200,
+  .addr = &uart_baud,            .addr_eep = &uart_baud_eep},
+ {.name = "buzz_period",
+  .max = 65534,  .def = BUZZ_DEFAULT_PERIOD, .flags = OPT_INFO_W16,
+  .addr = &buzz_period,          .addr_eep = &buzz_period_eep},
+ {.name = "buzz_duty",
+  .max = 127,  .def = BUZZ_DEFAULT_DUTY,
+  .addr = &buzz_duty,            .addr_eep = &buzz_duty_eep}
+};
+
+static uint8_t 
+get_opt_info(const uint8_t *buf, uint8_t len, struct opt_info *ret)
+{
+ uint8_t i;
+ uint8_t cnt = 0;
+
+ for(i = 0; i < len; i++) {
+  uint8_t c = buf[i];
+  if(!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && c != '_') break;
+ }
+ len = i;
+ if(len == 0 || len >= sizeof(opts->name)) return 0;
+
+
+ for(i = 0; i < sizeof(opts)/sizeof(opts[0]); i++) {
+  if(!strncmp_P((const char*)buf, opts[i].name, len)) {
+   memcpy_P(ret, opts+i, sizeof(*opts));
+   cnt++;
+  }
+ }
+ if(cnt != 1) return 0;
+
+ return len;
+}
+
+
 static uint8_t 
 get_set_opt(const uint8_t *buf, uint8_t len)
 {
  uint16_t v;
  uint8_t i, w = 0;
- uint8_t *opt_eep;
- uint8_t max;
- uint8_t *opt;
+ struct opt_info opt;
 
  if(len == 0) {
    printf_P(PSTR("ERROR\r\n"));
    return 0;
  }
  switch(buf[0]) {
+#if 0
           case 'X':
                   opt = &hp3478_ext_enable;
                   opt_eep = &hp3478_ext_en_eep;
@@ -798,6 +883,7 @@ get_set_opt(const uint8_t *buf, uint8_t len)
                   opt_eep = &uart_baud_eep;
                   max = 4;
                   break;
+#endif
           case '0':
           case '1':
                   set_defaults(buf[0]-'0');
@@ -807,14 +893,21 @@ get_set_opt(const uint8_t *buf, uint8_t len)
                   printf_P(opt_help);
                   return 0;
           default:
-                  printf_P(PSTR("WRONG OPTION\r\n"));
-                  return 0;
+                  i = get_opt_info(buf, len, &opt);
+                  if(!i) {
+                   printf_P(PSTR("WRONG OPTION\r\n"));
+                   return 0;
+                  }
+                  buf += i;
+                  len -= i;
+                  
  }
- buf++;
- len--;
 
  if(len == 0) {
-  printf_P(PSTR("%d\r\n"), (int)*opt);
+  unsigned val;
+  if(opt.flags & OPT_INFO_W16) val = *(uint16_t*)opt.addr;
+  else val = *(uint8_t*)opt.addr;
+  printf_P(PSTR("%u\r\n"), val);
   return 0;
  }
 
@@ -831,13 +924,18 @@ get_set_opt(const uint8_t *buf, uint8_t len)
   }
   v = v*10 + (c-'0');
  }
- if(v > max) {
+ if(v > opt.max) {
   printf_P(PSTR("ERROR\r\n"));
   return 0;
  }
 
- *opt = (uint8_t)v;
- if(w) eeprom_write_byte(opt_eep, (uint8_t)v);
+ if(opt.flags & OPT_INFO_W16) {
+  *(uint16_t*)opt.addr = (uint16_t)v;
+  if(w) eeprom_write_word(opt.addr_eep, (uint16_t)v);
+ } else {
+  *(uint8_t*)opt.addr = (uint8_t)v;
+  if(w) eeprom_write_byte(opt.addr_eep, (uint8_t)v);
+ }
  printf_P(PSTR("OK\r\n"));
  return 1;
 }
@@ -1668,7 +1766,7 @@ hp3478_cont_fini(void)
 
  s1 = hp3478_saved_state[0];
  s2 = hp3478_saved_state[1];
- beep(0);
+ beep_off();
  cmd[0] = 'R';
  if(s2 & HP3478_ST_AUTORANGE) cmd[1] = 'A';
  else cmd[1] = '0' + ((s1&HP3478_ST_RANGE)>>2);
@@ -1991,7 +2089,7 @@ hp3478a_handler(uint8_t ev)
   switch(state) {
           case HP3478_AHLL:
           case HP3478_AHLD:
-                  beep(0);
+                  beep_off();
                   hp3478_cmd_P(PSTR("M00D1T1"), 0);
                   break;
          
@@ -2013,7 +2111,7 @@ hp3478a_handler(uint8_t ev)
    switch(state) {
           case HP3478_AHLL:
           case HP3478_AHLD:
-                  beep(0);
+                  beep_off();
                   hp3478_cmd_P(PSTR("KM20D1T1"), 0);
                   break;
 
@@ -2150,20 +2248,20 @@ hp3478a_handler(uint8_t ev)
          case HP3478_AHLD:
          case HP3478_AHLL:
                  switch(hp3478_autohold_process(state == HP3478_AHLL, sb)) {
-                         case AHLD_ERROR:        beep(0);
+                         case AHLD_ERROR:        beep_off();
                                                  HP3478_REINIT;
                          case AHLD_LOCK: 
-                                                 beep(1);
+                                                 beep(buzz_period, buzz_duty);
                                                  state = HP3478_AHLL;
                                                  return 300;
                          case AHLD_UNLOCK: 
                                                  state = HP3478_AHLD;
-                                                 beep(0);
+                                                 beep_off();
                                                  return TIMEOUT_INF;
                          default:
                                                  if(state == HP3478_AHLL) {
                                                   if(ev & EV_TIMEOUT) {
-                                                   beep(0);
+                                                   beep_off();
                                                    return TIMEOUT_INF;
                                                   }
                                                   return TIMEOUT_CONT;
@@ -2199,25 +2297,30 @@ hp3478a_handler(uint8_t ev)
                 return 0xffff;
          case HP3478_CONT:
                 if(sb & HP3478_SB_DREADY) {
-                  hp3478_get_status(st);
-                  if(st[0] != (HP3478_ST_RANGE2|HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM)
-                     || (st[1]&7) != HP3478_ST_INT_TRIGGER) {
-                   hp3478_cont_fini();
-                   state = HP3478_IDLE;
-                   return TIMEOUT_INF;
-                  }
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
+                  /* uart_tx('r'); */
                   if(reading.value < 100000) {
                    if(!buzzer) {
                     if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT;
-                    beep(1);
+                    beep(buzz_period, buzz_duty);
                    }
                   } else {
                    if(buzzer) {
                     if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) HP3478_REINIT;
-                    beep(0);
+                    beep_off();
                    }
                   }
+                  return 2; /* Come back shortly to check if the mode is not changed:
+                               this delay is chosen so not to interrupt 3478 when it's doing
+                               something and keep reading rate at maximum. 
+                               The expected reading rate is 78 rdg/sec @50Hz. */
+                }
+                hp3478_get_status(st);
+                if(st[0] != (HP3478_ST_RANGE2|HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM)
+                     || (st[1]&7) != HP3478_ST_INT_TRIGGER) {
+                   hp3478_cont_fini();
+                   state = HP3478_IDLE;
+                   return TIMEOUT_INF;
                 }
                 return TIMEOUT_INF;
          case HP3478_DIOD:
@@ -2254,12 +2357,34 @@ hp3478a_handler(uint8_t ev)
 static void
 set_defaults(uint8_t set)
 {
- gpib_end_seq_tx = GPIB_END_EOI;
- gpib_end_seq_rx = GPIB_END_EOI;
- gpib_my_addr = GPIB_MY_DEFAULT_ADDRESS;
- gpib_hp3478_addr = GPIB_HP3478_DEFAULT_ADDRESS;
- hp3478_ext_enable = 0;
+ uint8_t i;
+ struct opt_info o;
+ for(i = 0; i < sizeof(opts)/sizeof(opts[0]); i++) {
+  memcpy_P(&o, opts+i, sizeof(*opts));
+  if(o.flags & OPT_INFO_W16) *(uint16_t*)o.addr = o.def;
+  else *(uint8_t*)o.addr = o.def;
+ }
+ /* this is default: hp3478_ext_enable = 0; */
  uart_echo = set == 0;
+}
+
+static void
+load_settings(void)
+{
+ uint8_t i;
+ uint16_t val;
+ struct opt_info o;
+
+ for(i = 0; i < sizeof(opts)/sizeof(opts[0]); i++) {
+  memcpy_P(&o, opts+i, sizeof(*opts));
+  if(o.flags & OPT_INFO_W16) {
+   val = eeprom_read_word(o.addr_eep);
+   if(val <= o.max) *(uint16_t*)o.addr = val;
+  } else {
+   val = eeprom_read_byte(o.addr_eep);
+   if(val <= o.max) *(uint8_t*)o.addr = val;
+  }
+ }
 }
 
 void main(void) __attribute__((noreturn));
@@ -2271,10 +2396,11 @@ void main(void)
   uint16_t timeout_ts = 0, timeout = 0;
   uint8_t ev;
   uint8_t ext_state;
-  uint8_t b;
 
-  led_set(LED_OFF);
+  PORT(LED_PORT) &= ~LED;
   DDR(LED_PORT) = LED;
+  PORT(BUZZ_PORT) &= ~BUZZ;
+  DDR(BUZZ_PORT) |= BUZZ;
   
   TCCR0A = _BV(WGM01)|_BV(WGM00);
   OCR0A = 249; /* TOV will occur every 1ms for 16Mhz clock */
@@ -2283,8 +2409,6 @@ void main(void)
 
   TCCR1A = _BV(COM1B1)|_BV(WGM10); /* beeper */
   TCCR1B = _BV(WGM13);
-  OCR1A = 10000;
-  OCR1B = 5000;
 
   PCMSK1 = _BV(PCINT11); /* SRQ */
   PCICR = _BV(PCIE1);
@@ -2293,13 +2417,8 @@ void main(void)
   
   command = 13; /* force line edit restart */
   set_defaults(0);
-  if((b = eeprom_read_byte(&gpib_end_seq_rx_eep)) != 0xff) gpib_end_seq_rx = b;
-  if((b = eeprom_read_byte(&gpib_end_seq_tx_eep)) != 0xff) gpib_end_seq_tx = b;
-  if((b = eeprom_read_byte(&uart_baud_eep)) != 0xff) uart_baud = b;
-  if((b = eeprom_read_byte(&gpib_my_addr_eep)) != 0xff) gpib_my_addr = b;
-  if((b = eeprom_read_byte(&gpib_hp3478_addr_eep)) != 0xff) gpib_hp3478_addr = b;
-  if((b = eeprom_read_byte(&uart_echo_eep)) != 0xff) uart_echo = b;
-  if((b = eeprom_read_byte(&hp3478_ext_en_eep)) != 0xff) hp3478_ext_enable = b;
+  load_settings();
+
   if(gpib_hp3478_addr == 31) command = 'P';
 
   uart_init(uart_baud);
@@ -2309,6 +2428,10 @@ void main(void)
   gpib_talk();
 
   ext_state = !hp3478_ext_enable;
+/*  beep(buzz_period, buzz_duty);
+  for(timeout = 0; timeout < 500; timeout++) _delay_ms(1);
+  beep_off();
+  timeout = 0; */
   while (1) {
    // FIXME: ignore some commands so not to interrupt "EXT" mode
    if(command) command_handler(command, buf, bufPos);
