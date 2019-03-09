@@ -316,7 +316,8 @@ beep(uint16_t period, uint8_t duty)
   else {
    OCR1A = period;
    OCR1B = (uint32_t)period*duty >> 8;
-   TCCR1B |= _BV(CS10);
+   TCCR1A = _BV(COM1B1)|_BV(WGM10);
+   TCCR1B = _BV(WGM13)|_BV(CS10);
   }
  }
  buzzer = 1;
@@ -327,7 +328,8 @@ beep_off(void)
 {
  buzzer = 0;
 
- TCCR1B &= ~_BV(CS10);
+ TCCR1B = 0;
+ TCCR1A = 0;
  PORT(BUZZ_PORT) &= ~BUZZ;
 }
 
@@ -2407,9 +2409,6 @@ void main(void)
   TCCR0B = _BV(WGM02)|_BV(CS01)|_BV(CS00); /* /64 */
   TIMSK0 = _BV(TOIE0);
 
-  TCCR1A = _BV(COM1B1)|_BV(WGM10); /* beeper */
-  TCCR1B = _BV(WGM13);
-
   PCMSK1 = _BV(PCINT11); /* SRQ */
   PCICR = _BV(PCIE1);
 
@@ -2428,10 +2427,12 @@ void main(void)
   gpib_talk();
 
   ext_state = !hp3478_ext_enable;
-/*  beep(buzz_period, buzz_duty);
-  for(timeout = 0; timeout < 500; timeout++) _delay_ms(1);
+#if 1
+  beep(buzz_period, buzz_duty);
+  for(timeout = 0; timeout < 5000; timeout++) _delay_ms(1);
   beep_off();
-  timeout = 0; */
+  timeout = 0; 
+#endif
   while (1) {
    // FIXME: ignore some commands so not to interrupt "EXT" mode
    if(command) command_handler(command, buf, bufPos);
