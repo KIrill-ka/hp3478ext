@@ -2427,7 +2427,7 @@ void main(void)
   gpib_talk();
 
   ext_state = !hp3478_ext_enable;
-#if 1
+#if 0
   beep(buzz_period, buzz_duty);
   for(timeout = 0; timeout < 5000; timeout++) _delay_ms(1);
   beep_off();
