@@ -261,6 +261,11 @@ uint8_t EEMEM gpib_end_seq_tx_eep = GPIB_END_EOI;
 uint8_t EEMEM uart_baud_eep = UART_115200;
 uint16_t EEMEM buzz_period_eep = BUZZ_DEFAULT_PERIOD; 
 uint8_t EEMEM buzz_duty_eep = BUZZ_DEFAULT_DUTY; 
+uint16_t EEMEM cont_threshold_eep = 1000; 
+uint16_t EEMEM cont_buzz_p1_eep = BUZZ_DEFAULT_PERIOD; 
+uint16_t EEMEM cont_buzz_p2_eep = BUZZ_DEFAULT_PERIOD; 
+uint8_t EEMEM cont_buzz_d1_eep = BUZZ_DEFAULT_DUTY; 
+uint8_t EEMEM cont_buzz_d2_eep = BUZZ_DEFAULT_DUTY; 
 
 #define GPIB_LISTEN 1
 #define GPIB_TALK   2
@@ -285,6 +290,11 @@ static uint8_t uart_baud;
 
 static uint16_t buzz_period;
 static uint8_t buzz_duty;
+static uint16_t cont_threshold;
+static uint16_t cont_buzz_p1;
+static uint16_t cont_buzz_p2;
+static uint8_t cont_buzz_d1;
+static uint8_t cont_buzz_d2;
 
 volatile uint16_t msec_count;
 
@@ -331,6 +341,21 @@ beep_off(void)
  TCCR1B = 0;
  TCCR1A = 0;
  PORT(BUZZ_PORT) &= ~BUZZ;
+}
+
+static void
+cont_beep(uint16_t val)
+{
+ uint16_t period, p1, p2;
+ uint8_t duty, d1, d2;
+ p1 = cont_buzz_p1;
+ p2 = cont_buzz_p2;
+ d1 = cont_buzz_d1;
+ d2 = cont_buzz_d2;
+
+ period = (uint16_t)((uint32_t)(p2-p1)*val/cont_threshold) + p1;
+ duty = (uint8_t)((uint16_t)(d2-d1)*val/cont_threshold) + d1;
+ beep(period, duty);
 }
 
 static int 
@@ -808,7 +833,22 @@ const struct opt_info PROGMEM opts[] = {
   .addr = &buzz_period,          .addr_eep = &buzz_period_eep},
  {.name = "buzz_duty",
   .max = 127,  .def = BUZZ_DEFAULT_DUTY,
-  .addr = &buzz_duty,            .addr_eep = &buzz_duty_eep}
+  .addr = &buzz_duty,            .addr_eep = &buzz_duty_eep},
+ {.name = "cont_thr",
+  .max = 3000,  .def = 1000, .flags = OPT_INFO_W16,
+  .addr = &cont_threshold,            .addr_eep = &cont_threshold_eep},
+ {.name = "cont_buzz_pa",
+  .max = 65534,  .def = BUZZ_DEFAULT_PERIOD, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_p1,            .addr_eep = &cont_buzz_p1_eep},
+ {.name = "cont_buzz_pb",
+  .max = 65534,  .def = BUZZ_DEFAULT_PERIOD, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_p2,            .addr_eep = &cont_buzz_p2_eep},
+ {.name = "cont_buzz_da",
+  .max = 127,  .def = BUZZ_DEFAULT_DUTY,
+  .addr = &cont_buzz_d1,            .addr_eep = &cont_buzz_d1_eep},
+ {.name = "cont_buzz_db",
+  .max = 127,  .def = BUZZ_DEFAULT_DUTY,
+  .addr = &cont_buzz_d2,            .addr_eep = &cont_buzz_d2_eep}
 };
 
 static uint8_t 
@@ -2301,11 +2341,11 @@ hp3478a_handler(uint8_t ev)
                 if(sb & HP3478_SB_DREADY) {
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
                   /* uart_tx('r'); */
-                  if(reading.value < 100000) {
+                  if(reading.value < cont_threshold*100) {
                    if(!buzzer) {
                     if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT;
-                    beep(buzz_period, buzz_duty);
                    }
+                   cont_beep((uint16_t)(reading.value/100));
                   } else {
                    if(buzzer) {
                     if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) HP3478_REINIT;
