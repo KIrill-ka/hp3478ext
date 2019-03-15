@@ -28,10 +28,14 @@
  TODO list
 
  - Display 0 with O?
- - fix ext mode (gpib_transmit & gpib_receive interface change)
- - Implement O0 = reset to defaults
  - Implement unbuffered binary write TUD using escape-sequence as stop
  - Implement unbuffered binary read TUD using escape-sequence as stop
+ - Allow to specify range for cont mode.
+ - Replace > 100 with cont_threshold
+ - Fix eeprom var locations.
+ - Latch in continuity mode.
+ - Menu timeout.
+ - Presets?
  */
 
 /* 
@@ -262,6 +266,8 @@ uint8_t EEMEM uart_baud_eep = UART_115200;
 uint16_t EEMEM buzz_period_eep = BUZZ_DEFAULT_PERIOD; 
 uint8_t EEMEM buzz_duty_eep = BUZZ_DEFAULT_DUTY; 
 uint16_t EEMEM cont_threshold_eep = 1000; 
+uint16_t EEMEM cont_buzz_t1_eep = 10;
+uint16_t EEMEM cont_buzz_t2_eep = 20; 
 uint16_t EEMEM cont_buzz_p1_eep = BUZZ_DEFAULT_PERIOD; 
 uint16_t EEMEM cont_buzz_p2_eep = BUZZ_DEFAULT_PERIOD; 
 uint8_t EEMEM cont_buzz_d1_eep = BUZZ_DEFAULT_DUTY; 
@@ -291,6 +297,8 @@ static uint8_t uart_baud;
 static uint16_t buzz_period;
 static uint8_t buzz_duty;
 static uint16_t cont_threshold;
+static uint16_t cont_buzz_t1;
+static uint16_t cont_buzz_t2;
 static uint16_t cont_buzz_p1;
 static uint16_t cont_buzz_p2;
 static uint8_t cont_buzz_d1;
@@ -347,14 +355,25 @@ static void
 cont_beep(uint16_t val)
 {
  uint16_t period, p1, p2;
+ uint16_t t1, t2;
  uint8_t duty, d1, d2;
  p1 = cont_buzz_p1;
  p2 = cont_buzz_p2;
  d1 = cont_buzz_d1;
  d2 = cont_buzz_d2;
+ t1 = cont_buzz_t1;
+ t2 = cont_buzz_t2;
 
- period = (uint16_t)((uint32_t)(p2-p1)*val/cont_threshold) + p1;
- duty = (uint8_t)((uint16_t)(d2-d1)*val/cont_threshold) + d1;
+ if(val <= t1) {
+  period = p1;
+  duty = d1;
+ } else if(val >= t2) {
+  period = p2;
+  duty = d2;
+ } else {
+  period = (uint16_t)((uint32_t)(p2-p1)*(val-t1)/(t2-t1)) + p1;
+  duty = (uint8_t)((uint16_t)(d2-d1)*(val-t1)/(t2-t1)) + d1;
+ }
  beep(period, duty);
 }
 
@@ -837,6 +856,12 @@ const struct opt_info PROGMEM opts[] = {
  {.name = "cont_thr",
   .max = 3000,  .def = 1000, .flags = OPT_INFO_W16,
   .addr = &cont_threshold,            .addr_eep = &cont_threshold_eep},
+ {.name = "cont_buzz_ta",
+  .max = 3000,  .def = 10, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_t1,            .addr_eep = &cont_buzz_t1_eep},
+ {.name = "cont_buzz_tb",
+  .max = 3000,  .def = 20, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_t2,            .addr_eep = &cont_buzz_t2_eep},
  {.name = "cont_buzz_pa",
   .max = 65534,  .def = BUZZ_DEFAULT_PERIOD, .flags = OPT_INFO_W16,
   .addr = &cont_buzz_p1,            .addr_eep = &cont_buzz_p1_eep},
