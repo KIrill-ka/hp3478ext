@@ -25,15 +25,18 @@ CFLAGS=  $(OFLAG) -g -Wall -mmcu=$(MCU) -ffreestanding -Wa,-ahlms=$(<:.c=.lst)
 .out.hex:
 	avr-objcopy -R .eeprom -R .fuse -R .lock -O ihex $< $@
 
-.out.eep:
-	avr-objcopy -j .eeprom --set-section-flags=.eeprom="alloc,load" \
-    --change-section-lma .eeprom=0 -O ihex $< $@
+#.out.eep:
+#avr-objcopy -j .eeprom --set-section-flags=.eeprom="alloc,load" \
+#--change-section-lma .eeprom=0 -O ihex $< $@
 # --no-change-warnings
 
 all:	$(NAME).hex $(NAME).eep $(NAME)-dc-buzzer.eep
 
-$(NAME)-dc-buzzer.eep: $(NAME).out
-	./eeprom_set_var.tcl $< $@ buzz_period_eep 0
+$(NAME)-dc-buzzer.eep: eepmap.h
+	./eeprom_set_var.tcl -d DEF2 $@
+
+$(NAME).eep: eepmap.h
+	./eeprom_set_var.tcl -d DEF1 $@
 
 OBJS = $(NAME).o uart.o
 

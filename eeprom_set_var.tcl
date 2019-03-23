@@ -1,31 +1,37 @@
 #!/usr/bin/tclsh8.6
 
-set elf [lindex $argv 0]
-set out [lindex $argv 1]
-set f [open "|avr-objdump -j .eeprom -t $elf"]
-while {![eof $f]} {
- set s [gets $f]
- set t [lindex $s 2]
- if {$t ne "O"} continue
- set name [lindex $s end]
- set opt($name) 0x[lindex $s 0]
- set opt_sz($name) 0x[lindex $s end-1]
- set opt($name) [expr {$opt($name)-0x810000}]
- set opt_sz($name) [expr {$opt_sz($name)}]
+source ihex.tcl
+
+set list 0
+
+set arg 0
+if {[lindex $argv $arg] eq "-d"} {
+  incr arg
+  set def [lindex $argv $arg]
+  incr arg
+} elseif {[lindex $argv $arg] eq "-l"} {
+  set list 1
+  incr arg
 }
-close $f
+set out [lindex $argv $arg]
+incr arg
 
+proc def2name {def} {
+ return [regsub {DEF[0-9]+_(.*)} $def \\1]
+}
+proc eep_set_var {eep_var name value} {
+ upvar $eep_var eep
+ global opt_sz
+ set addr $::opt($name)
 
-set f [file tempfile tmp]
-close $f
+ if {$opt_sz($name) == 1} {
+  set eep [binary format a*@${addr}c $eep $value]
+ } else {
+  set eep [binary format a*@${addr}s $eep $value]
+ }
+}
 
-exec avr-objcopy -j .eeprom --set-section-flags=.eeprom=alloc,load --change-section-lma .eeprom=0 -O binary $elf $tmp
-set f [open $tmp r]
-fconfigure $f -translation binary
-set eep [read $f]
-close $f
-
-proc get_val {eep name} {
+proc eep_get_var {eep name} {
  global opt_sz opt
  set addr $opt($name)
  if {$opt_sz($name) == 1} {
@@ -33,19 +39,56 @@ proc get_val {eep name} {
  } else {
   binary scan $eep @${addr}su old_value
  }
+ if {![info exists old_value]} {return <undef>}
  return $old_value
 }
 
-if {$out eq ""} {
- foreach n [array names opt] {
-  puts "$n=[get_val $eep $n] @$opt($n)/$opt_sz($n) "
+set f [open eepmap.h r]
+while {![eof $f]} {
+  set s [gets $f]
+  set var [lindex $s 1]
+  if {[string first EEP_ADDR_ $var] == 0} {
+   set n [string range $var 9 end]
+   set opt($n) [lindex $s 2]
+   if {![info exists opt_sz($n)]} {
+     set opt_sz($n) 1
+   }
+  } elseif {[string first EEP_DEF $var] == 0} {
+    set opt_def([string range $var 4 end]) [lindex $s 2]
+  } elseif {[string first EEP_SIZE_ $var] == 0} {
+    set n [string range $var 9 end]
+    set opt_sz($n) [lindex $s 2]
+  }
+}
+close $f
+
+if {[info exists def]} {
+  set eep {}
+  foreach v [array names opt_def DEF0*] {
+    eep_set_var eep [def2name $v] $opt_def($v)
+  }
+  foreach v [array names opt_def $def*] {
+    eep_set_var eep [def2name $v] $opt_def($v)
+  }
+# ihex_write $out [list 0 $eep]
+} else {
+
+ set eep_chunks [ihex_read $out]
+ if {[llength $eep_chunks] != 2} {
+   error "discontiguous hex file"
  }
- file delete $tmp
+ set eep [lindex $eep_chunks 1]
+}
+
+if {$list} {
+ foreach n [lsort [array names opt]] {
+  puts "$n=[eep_get_var $eep $n] @$opt($n)/$opt_sz($n) "
+ }
  exit 0
 }
 
-foreach {name value} [lrange $argv 2 end] {
- set old_value [get_val $eep $name]
+foreach {name value} [lrange $argv $arg end] {
+ set old_value [eep_get_var $eep $name]
  set addr $opt($name)
  if {$opt_sz($name) == 1} {
   set eep [binary format a*@${addr}c $eep $value]
@@ -55,10 +98,4 @@ foreach {name value} [lrange $argv 2 end] {
  puts "$name: $old_value->$value"
 }
 
-set f [open $tmp w]
-fconfigure $f -translation binary
-puts -nonewline $f $eep
-close $f
-
-exec avr-objcopy -I binary -O ihex $tmp $out
-file delete $tmp
+ihex_write $out [list 0 $eep]

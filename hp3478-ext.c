@@ -22,6 +22,7 @@
 #include <util/delay.h>
 
 #include "uart.h"
+#include "eepmap.h"
 
 
 /*
@@ -103,14 +104,20 @@
 #define DDR(X) CAT(DDR, X)
 #define PIN(X) CAT(PIN, X)
 
+#if 0
+#define DIAG_STR(s) #s
+#define DIAG_JOINSTR(x,y) DIAG_STR(x ## y)
+#define DIAG_DO_PRAGMA(x) _Pragma (#x)
+#define DIAG_PRAGMA(compiler,x) DIAG_DO_PRAGMA(compiler diagnostic x)
+
+#define DISABLE_WARNING(gcc_option) DIAG_PRAGMA(GCC,push) DIAG_PRAGMA(GCC,ignored DIAG_JOINSTR(-W,gcc_option))
+#define RESTORE_WARNING() DIAG_PRAGMA(GCC,pop)
+#endif
+
 /* configuration constants & defaults */
-#define GPIB_MY_DEFAULT_ADDRESS 21
-#define GPIB_HP3478_DEFAULT_ADDRESS 23
 #define GPIB_BUF_SIZE 127
 #define GPIB_MAX_RECEIVE_TIMEOUT_mS 200
 #define GPIB_MAX_TRANSMIT_TIMEOUT_mS 200
-#define BUZZ_DEFAULT_PERIOD 10000
-#define BUZZ_DEFAULT_DUTY 15
 
 /* PIN assignment */
 /*
@@ -255,24 +262,6 @@ const char opt_help[] PROGMEM =
 #define GPIB_END_EOI 4
 #define GPIB_END_BUF 8 /* synthetic, used as return value from gpib_receive */
 
-uint8_t EEMEM hp3478_ext_en_eep = 1;
-uint8_t EEMEM uart_echo_eep = 1;
-uint8_t EEMEM gpib_my_addr_eep = GPIB_MY_DEFAULT_ADDRESS;
-uint8_t EEMEM gpib_hp3478_addr_eep = GPIB_HP3478_DEFAULT_ADDRESS;
-uint8_t EEMEM dummy1_eep = 0;
-uint8_t EEMEM gpib_end_seq_rx_eep = GPIB_END_EOI;
-uint8_t EEMEM gpib_end_seq_tx_eep = GPIB_END_EOI;
-uint8_t EEMEM uart_baud_eep = UART_115200;
-uint16_t EEMEM buzz_period_eep = BUZZ_DEFAULT_PERIOD; 
-uint8_t EEMEM buzz_duty_eep = BUZZ_DEFAULT_DUTY; 
-uint16_t EEMEM cont_threshold_eep = 1000; 
-uint16_t EEMEM cont_buzz_t1_eep = 10;
-uint16_t EEMEM cont_buzz_t2_eep = 20; 
-uint16_t EEMEM cont_buzz_p1_eep = BUZZ_DEFAULT_PERIOD; 
-uint16_t EEMEM cont_buzz_p2_eep = BUZZ_DEFAULT_PERIOD; 
-uint8_t EEMEM cont_buzz_d1_eep = BUZZ_DEFAULT_DUTY; 
-uint8_t EEMEM cont_buzz_d2_eep = BUZZ_DEFAULT_DUTY; 
-
 #define GPIB_LISTEN 1
 #define GPIB_TALK   2
 static uint8_t gpib_state = 0;
@@ -303,6 +292,8 @@ static uint16_t cont_buzz_p1;
 static uint16_t cont_buzz_p2;
 static uint8_t cont_buzz_d1;
 static uint8_t cont_buzz_d2;
+static uint8_t cont_latch;
+static uint8_t cont_range;
 
 volatile uint16_t msec_count;
 
@@ -325,6 +316,7 @@ led_set(enum led_mode m)
 }
 static inline void led_toggle(void) {PIN(LED_PORT) |= LED;}
 
+static uint8_t cont_latch_dncnt;
 static uint8_t buzzer = 0;
 static void 
 beep(uint16_t period, uint8_t duty)
@@ -827,53 +819,59 @@ struct opt_info {
 
 const struct opt_info PROGMEM opts[] = {
  {.name = "X",          
-  .max = 1, .def = 0, 
-  .addr = &hp3478_ext_enable,    .addr_eep = &hp3478_ext_en_eep},
+  .max = 1, .def = EEP_DEF0_HP3478_EXT_EN,
+  .addr = &hp3478_ext_enable,    .addr_eep = (void*)EEP_ADDR_HP3478_EXT_EN},
  {.name = "I",
-  .max = 1, .def = 1,
-  .addr = &uart_echo,            .addr_eep = &uart_echo_eep},
+  .max = 1, .def = EEP_DEF0_UART_ECHO,
+  .addr = &uart_echo,            .addr_eep = (void*)EEP_ADDR_UART_ECHO},
  {.name = "C",
-  .max = 30, .def = GPIB_MY_DEFAULT_ADDRESS,
-  .addr = &gpib_my_addr,         .addr_eep = &gpib_my_addr_eep},
+  .max = 30, .def = EEP_DEF0_GPIB_MY_ADDR,
+  .addr = &gpib_my_addr,         .addr_eep = (void*)EEP_ADDR_GPIB_MY_ADDR},
  {.name = "D",
-  .max = 31, .def = GPIB_HP3478_DEFAULT_ADDRESS,
-  .addr = &gpib_hp3478_addr,     .addr_eep = &gpib_hp3478_addr_eep},
+  .max = 31, .def = EEP_DEF0_GPIB_HP3478_ADDR,
+  .addr = &gpib_hp3478_addr,     .addr_eep = (void*)EEP_ADDR_GPIB_HP3478_ADDR},
  {.name = "R",
-  .max = 7,  .def = GPIB_END_EOI,
-  .addr = &gpib_end_seq_rx,      .addr_eep = &gpib_end_seq_rx_eep},
+  .max = 7,  .def = EEP_DEF0_GPIB_END_SEQ_RX,
+  .addr = &gpib_end_seq_rx,      .addr_eep = (void*)EEP_ADDR_GPIB_END_SEQ_RX},
  {.name = "T",
-  .max = 7,  .def = GPIB_END_EOI,
-  .addr = &gpib_end_seq_tx,      .addr_eep = &gpib_end_seq_tx_eep},
+  .max = 7,  .def = EEP_DEF0_GPIB_END_SEQ_TX,
+  .addr = &gpib_end_seq_tx,      .addr_eep = (void*)EEP_ADDR_GPIB_END_SEQ_TX},
  {.name = "B",
-  .max = 4, .def = UART_115200,
-  .addr = &uart_baud,            .addr_eep = &uart_baud_eep},
- {.name = "buzz_period",
-  .max = 65534,  .def = BUZZ_DEFAULT_PERIOD, .flags = OPT_INFO_W16,
-  .addr = &buzz_period,          .addr_eep = &buzz_period_eep},
- {.name = "buzz_duty",
-  .max = 127,  .def = BUZZ_DEFAULT_DUTY,
-  .addr = &buzz_duty,            .addr_eep = &buzz_duty_eep},
+  .max = 4, .def = EEP_DEF0_UART_BAUD,
+  .addr = &uart_baud,            .addr_eep = (void*)EEP_ADDR_UART_BAUD},
+ {.name = "beep_period",
+  .max = 65534,  .def = EEP_DEF0_BEEP_PERIOD, .flags = OPT_INFO_W16,
+  .addr = &buzz_period,          .addr_eep = (void*)EEP_ADDR_BEEP_PERIOD},
+ {.name = "beep_duty",
+  .max = 127,  .def = EEP_DEF0_BEEP_DUTY,
+  .addr = &buzz_duty,            .addr_eep = (void*)EEP_ADDR_BEEP_DUTY},
  {.name = "cont_thr",
-  .max = 3000,  .def = 1000, .flags = OPT_INFO_W16,
-  .addr = &cont_threshold,            .addr_eep = &cont_threshold_eep},
- {.name = "cont_buzz_ta",
-  .max = 3000,  .def = 10, .flags = OPT_INFO_W16,
-  .addr = &cont_buzz_t1,            .addr_eep = &cont_buzz_t1_eep},
- {.name = "cont_buzz_tb",
-  .max = 3000,  .def = 20, .flags = OPT_INFO_W16,
-  .addr = &cont_buzz_t2,            .addr_eep = &cont_buzz_t2_eep},
- {.name = "cont_buzz_pa",
-  .max = 65534,  .def = BUZZ_DEFAULT_PERIOD, .flags = OPT_INFO_W16,
-  .addr = &cont_buzz_p1,            .addr_eep = &cont_buzz_p1_eep},
- {.name = "cont_buzz_pb",
-  .max = 65534,  .def = BUZZ_DEFAULT_PERIOD, .flags = OPT_INFO_W16,
-  .addr = &cont_buzz_p2,            .addr_eep = &cont_buzz_p2_eep},
- {.name = "cont_buzz_da",
-  .max = 127,  .def = BUZZ_DEFAULT_DUTY,
-  .addr = &cont_buzz_d1,            .addr_eep = &cont_buzz_d1_eep},
- {.name = "cont_buzz_db",
-  .max = 127,  .def = BUZZ_DEFAULT_DUTY,
-  .addr = &cont_buzz_d2,            .addr_eep = &cont_buzz_d2_eep}
+  .max = 3000,  .def = EEP_DEF0_CONT_THRESHOLD, .flags = OPT_INFO_W16,
+  .addr = &cont_threshold,       .addr_eep = (void*)EEP_ADDR_CONT_THRESHOLD},
+ {.name = "cont_latch",
+  .max = 100,  .def = EEP_DEF0_CONT_LATCH,
+  .addr = &cont_latch,           .addr_eep = (void*)EEP_ADDR_CONT_LATCH},
+ {.name = "cont_range",
+  .max = 6,  .def = EEP_DEF0_CONT_RANGE,
+  .addr = &cont_range,           .addr_eep = (void*)EEP_ADDR_CONT_RANGE},
+ {.name = "cont_beep_ta",
+  .max = 3000,  .def = EEP_DEF0_CONT_BEEP_T1, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_t1,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_T1},
+ {.name = "cont_beep_tb",
+  .max = 3000,  .def = EEP_DEF0_CONT_BEEP_T2, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_t2,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_T2},
+ {.name = "cont_beep_pa",
+  .max = 65534,  .def = EEP_DEF0_CONT_BEEP_P1, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_p1,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_P1},
+ {.name = "cont_beep_pb",
+  .max = 65534,  .def = EEP_DEF0_CONT_BEEP_P2, .flags = OPT_INFO_W16,
+  .addr = &cont_buzz_p2,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_P2},
+ {.name = "cont_beep_da",
+  .max = 127,  .def = EEP_DEF0_CONT_BEEP_D1,
+  .addr = &cont_buzz_d1,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_D1},
+ {.name = "cont_beep_db",
+  .max = 127,  .def = EEP_DEF0_CONT_BEEP_D2,
+  .addr = &cont_buzz_d2,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_D2}
 };
 
 static uint8_t 
@@ -1158,7 +1156,10 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                       result = gpib_transmit(gpib_buf, gpib_len, send_eoi);
                       err = result != gpib_len;
                      }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
                      uart_tx(result);
+#pragma GCC diagnostic pop
                     }
                    } else if((buf[1] == 'B' || buf[1] == 'H') && buf[2] == 'D') { /* hex & binary rx data */
                     uint32_t l;
@@ -1503,17 +1504,19 @@ hp3478_display_reading(struct hp3478_reading *r, uint8_t st, char mode_ind, uint
   }
   goto display_units;
  }
- if(r->value >= 0) { 
+ if(mode_ind == 'b') {
+   display[0] = '>';
+ } else if(r->value >= 0) { 
   if(f == HP3478_ST_FUNC_DCA || f == HP3478_ST_FUNC_DCV) display[0] = '+';
   else display[0] = ' ';
  } else {
   display[0] = '-';
   r->value = -r->value;
  }
-  
+
  for(i = 7; i > 0; i--) {
   if(((st & HP3478_ST_N_DIGITS) != HP3478_ST_N_DIGITS5 && i == 7)
-    || ((st & HP3478_ST_N_DIGITS) == HP3478_ST_N_DIGITS3 && i == 6)) display[i] = ' ';
+     || ((st & HP3478_ST_N_DIGITS) == HP3478_ST_N_DIGITS3 && i == 6)) display[i] = ' ';
   else display[i] = r->value % 10 + '0';
   r->value /= 10;
   if(i == r->dot+2) display[--i] = '.';
@@ -1530,7 +1533,7 @@ hp3478_display_reading(struct hp3478_reading *r, uint8_t st, char mode_ind, uint
 
 display_units:
  i = 8;
- if(!mode_ind) display[i++] = ' ';
+ if(mode_ind >= 'a') display[i++] = ' ';
  display[i++] = exp_char;
  if(mode_ind == 'd') m = PSTR("V  ");
  else if(mode_ind == 'c') m = PSTR("C  ");
@@ -1544,7 +1547,7 @@ display_units:
          default: m = PSTR("???"); 
  }
  memcpy_P(display+i, m, 3);
- if(mode_ind) display[12] = mode_ind < 'a' ? mode_ind : ' ';
+ if(mode_ind < 'a') display[12] = mode_ind;
 #if 0
  {
   static uint8_t a = 0;
@@ -1637,8 +1640,9 @@ hp3478_menu_next(uint8_t st1, struct hp3478_reading *r, uint8_t pos)
                  return HP3478_MENU_MINMAX;
          case HP3478_MENU_TEMP:
          case HP3478_MENU_MINMAX:
-                 return HP3478_MENU_DONE;
+                 break;
  }
+ return HP3478_MENU_DONE;
 }
 
 static uint8_t
@@ -1656,7 +1660,10 @@ hp3478_menu_show(uint8_t pos)
          case HP3478_MENU_DIODE: s = PSTR("M: DIODE"); break;
          case HP3478_MENU_TEMP: s = PSTR("M: TEMP"); break;
  }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
  return hp3478_display_P(s, HP3478_DISP_HIDE_ANNUNCIATORS|HP3478_CMD_CONT);
+#pragma GCC diagnostic pop
 }
 
 static uint8_t 
@@ -1752,7 +1759,7 @@ hp3478_xohm_handle_data(struct hp3478_reading *reading)
   r /= 10;
  }
  rr.value = r;
- return hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 0, 0);
+ return hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 'z', 0);
 }
 
 static uint8_t minmax_state = 0;
@@ -1849,6 +1856,24 @@ hp3478_cont_fini(void)
  return hp3478_cmd(cmd, sizeof(cmd), 0);
 }
 
+
+/* TODO: extend this table for all modes and use it in hp3478_display_reading */
+const char hp3478_cont_range2exp[7] PROGMEM = {2, 3, 3<<4|1, 3<<4|2, 3<<4|3, 6<<4|1, 6<<4|2}; 
+
+static int
+hp3478_cont_show_thres(void)
+{
+ struct hp3478_reading r;
+ uint8_t dot_exp;
+
+ dot_exp = pgm_read_byte(hp3478_cont_range2exp + cont_range);
+ r.value = (uint32_t)cont_threshold*100;
+ r.dot = dot_exp & 0x0f;
+ r.exp = dot_exp >> 4;
+
+ return hp3478_display_reading(&r, HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM, 'b', HP3478_DISP_HIDE_ANNUNCIATORS);
+}
+
 static uint8_t 
 hp3478_cont_init(void)
 {
@@ -1856,8 +1881,12 @@ hp3478_cont_init(void)
  if(!hp3478_get_status(s)) return 0;
  hp3478_saved_state[0] = s[0];
  hp3478_saved_state[1] = s[1];
- if(!hp3478_cmd_P(PSTR("R2N3M21Z0"), 0)) return 0;
- if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+ s[0] = 'R';
+ s[1] = '1'+cont_range;
+ if(!hp3478_cmd(s, 2, 0)) return 0;
+ if(!hp3478_cmd_P(PSTR("N3M21Z0"), 0)) return 0;
+ if(!hp3478_cont_show_thres()) return 0;
+ cont_latch_dncnt = 0;
  return 1;
 }
 
@@ -2367,13 +2396,15 @@ hp3478a_handler(uint8_t ev)
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
                   /* uart_tx('r'); */
                   if(reading.value < cont_threshold*100) {
-                   if(!buzzer) {
+                   if(!cont_latch_dncnt) {
                     if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT;
                    }
                    cont_beep((uint16_t)(reading.value/100));
-                  } else {
-                   if(buzzer) {
-                    if(!hp3478_display_P(PSTR(" >100 OHM"), HP3478_DISP_HIDE_ANNUNCIATORS)) HP3478_REINIT;
+                   cont_latch_dncnt = cont_latch;
+                  } else if(buzzer) {
+                   if(cont_latch_dncnt) cont_latch_dncnt--;
+                   else {
+                    if(!hp3478_cont_show_thres()) HP3478_REINIT;
                     beep_off();
                    }
                   }
