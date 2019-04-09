@@ -26,6 +26,9 @@
 #define EEP_SIZE_BEEP_PERIOD      2
 #define EEP_SIZE_CONT_BEEP_P1     2
 #define EEP_SIZE_CONT_BEEP_P2     2
+#define EEP_SIZE_CONT_THRESHOLD   2
+#define EEP_SIZE_CONT_BEEP_T1     2
+#define EEP_SIZE_CONT_BEEP_T2     2
 
 
 /* set 0, used for uninitalized eeprom */

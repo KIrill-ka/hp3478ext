@@ -45,6 +45,6 @@ $(NAME).out: $(OBJS)
 	avr-size -A $(NAME).out
 
 clean:
-	rm -f *.out *.bin *.hex *.s *.o
+	rm -f *.out *.bin *.hex *.s *.o *.eep
 
 

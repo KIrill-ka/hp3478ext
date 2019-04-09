@@ -1858,7 +1858,7 @@ hp3478_cont_fini(void)
 
 
 /* TODO: extend this table for all modes and use it in hp3478_display_reading */
-const char hp3478_cont_range2exp[7] PROGMEM = {2, 3, 3<<4|1, 3<<4|2, 3<<4|3, 6<<4|1, 6<<4|2}; 
+const uint8_t hp3478_cont_range2exp[7] PROGMEM = {2, 3, 3<<4|1, 3<<4|2, 3<<4|3, 6<<4|1, 6<<4|2}; 
 
 static int
 hp3478_cont_show_thres(void)
@@ -1883,7 +1883,7 @@ hp3478_cont_init(void)
  hp3478_saved_state[1] = s[1];
  s[0] = 'R';
  s[1] = '1'+cont_range;
- if(!hp3478_cmd(s, 2, 0)) return 0;
+ if(!hp3478_cmd(s, 2, HP3478_CMD_NO_LF)) return 0;
  if(!hp3478_cmd_P(PSTR("N3M21Z0"), 0)) return 0;
  if(!hp3478_cont_show_thres()) return 0;
  cont_latch_dncnt = 0;
@@ -2414,11 +2414,11 @@ hp3478a_handler(uint8_t ev)
                                The expected reading rate is 78 rdg/sec @50Hz. */
                 }
                 hp3478_get_status(st);
-                if(st[0] != (HP3478_ST_RANGE2|HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM)
+                if(st[0] != ((cont_range+1)<<2|HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM)
                      || (st[1]&7) != HP3478_ST_INT_TRIGGER) {
                    hp3478_cont_fini();
+                   hp3478_cmd_P(PSTR("M20D1"), 0);
                    state = HP3478_IDLE;
-                   return TIMEOUT_INF;
                 }
                 return TIMEOUT_INF;
          case HP3478_DIOD:
