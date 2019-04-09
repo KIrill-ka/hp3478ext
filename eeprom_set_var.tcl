@@ -12,6 +12,9 @@ if {[lindex $argv $arg] eq "-d"} {
 } elseif {[lindex $argv $arg] eq "-l"} {
   set list 1
   incr arg
+} else {
+ puts "usage: [info script] \[-l | -d <defaults-set>\] <eeprom_file>"
+ exit 0
 }
 set out [lindex $argv $arg]
 incr arg
