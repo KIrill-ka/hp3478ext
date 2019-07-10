@@ -49,3 +49,21 @@ proc rfegen_off {} {
  set cmd [binary format "aca*" # 5 CP0]
  puts -nonewline $rfegen_fd $cmd
 }
+
+proc rfegen_send_cmd {c} {
+ global rfegen_fd
+ set l [string length $c]
+ incr l 2
+ puts -nonewline $rfegen_fd [binary format "aca*" # $l $c]
+}
+
+proc rfegen_cw_exp {freq_khz pwr} {
+ # FW 1.31: C5-F command does accept %+06.2f, but it rounds to .25 anyway.
+ #          The tracking mode doesn't accept +XX.XX format for some reason,
+ #          so we use +XX.X
+ rfegen_send_cmd C5-F:[format %07d $freq_khz],[format %+05.1f $pwr]
+}
+
+proc rfegen_track_exp_start {start_freq_khz n_steps step_khz pwr} {
+ rfegen_send_cmd C5-T:[format %07d $start_freq_khz],[format %+05.1f $pwr],[format %04d $n_steps],[format %07d $step_khz]
+}
