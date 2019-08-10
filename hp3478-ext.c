@@ -1214,6 +1214,14 @@ struct hp3478_reading {
  int8_t exp;
 };
 
+static uint8_t errcode;
+static uint8_t errcode2;
+static uint8_t errcode3;
+static uint8_t errcode4;
+#define L2_ERRCODE(X) do {errcode2 = (X);} while(0)
+#define L3_ERRCODE(X) do {errcode3 = (X);} while(0)
+#define L4_ERRCODE(X) do {errcode4 = (X);} while(0)
+
 /* flags for IO routines below */
 #define HP3478_CMD_LISTEN                 1 /* stay in listen state (hp3478a is talking, we are listening) */
 #define HP3478_CMD_TALK                   2 /* stay in talk state (hp3478a is listening, we are talking) */
@@ -1236,15 +1244,24 @@ hp3478_cmd(const uint8_t *cmd, uint8_t len, uint8_t flags)
    cmd1[0] = gpib_hp3478_addr+GPIB_LISTEN_ADDR_OFFSET;
    cmd1[1] = gpib_my_addr+GPIB_TALK_ADDR_OFFSET;
    set_atn(1);
-   if(!gpib_transmit_b(cmd1, 2, 0)) goto fail;
+   if(!gpib_transmit_b(cmd1, 2, 0)) {
+    errcode = 1;
+    goto fail;
+   }
    set_atn(0);
  }
- if(!gpib_transmit_b(cmd, len, (flags & HP3478_CMD_NO_LF) ? 0 : GPIB_END_LF)) goto fail;
+ if(!gpib_transmit_b(cmd, len, (flags & HP3478_CMD_NO_LF) ? 0 : GPIB_END_LF)) {
+  errcode = 2;
+  goto fail;
+ }
  if((flags & HP3478_CMD_REMOTE) == 0) set_ren(0);
  if((flags & HP3478_CMD_TALK) == 0) {
   cmd1[0] = '?';
   set_atn(1);
-  if(!gpib_transmit_b(cmd1, 1, 0)) goto fail;
+  if(!gpib_transmit_b(cmd1, 1, 0)) {
+   errcode = 3;
+   goto fail;
+  }
   set_atn(0);
   gpib_state = 0;
  } else {
@@ -1271,15 +1288,24 @@ hp3478_cmd_P(const char *cmd, uint8_t flags)
    cmd1[0] = gpib_hp3478_addr+GPIB_LISTEN_ADDR_OFFSET;
    cmd1[1] = gpib_my_addr+GPIB_TALK_ADDR_OFFSET;
    set_atn(1);
-   if(!gpib_transmit_b(cmd1, 2, 0)) goto fail;
+   if(!gpib_transmit_b(cmd1, 2, 0)) {
+    errcode = 1;
+    goto fail;
+   }
    set_atn(0);
  }
- if(!gpib_transmit_P((const uint8_t*)cmd, strlen_P(cmd), GPIB_END_LF)) goto fail;
+ if(!gpib_transmit_P((const uint8_t*)cmd, strlen_P(cmd), GPIB_END_LF)) {
+  errcode = 2;
+  goto fail;
+ }
  if((flags & HP3478_CMD_REMOTE) == 0) set_ren(0);
  if((flags & HP3478_CMD_TALK) == 0) {
   cmd1[0] = '?';
   set_atn(1);
-  if(!gpib_transmit_b(cmd1, 1, 0)) goto fail;
+  if(!gpib_transmit_b(cmd1, 1, 0)) {
+   errcode = 3;
+   goto fail;
+  }
   set_atn(0);
   gpib_state = 0;
  } else {
@@ -1307,16 +1333,25 @@ hp3478_get_srq_status(uint8_t *sb)
  cmd[1] = gpib_hp3478_addr+GPIB_TALK_ADDR_OFFSET;
  cmd[2] = gpib_my_addr+GPIB_LISTEN_ADDR_OFFSET;
  set_atn(1);
- if(!gpib_transmit_b(cmd, 3, 0)) goto fail;
+ if(!gpib_transmit_b(cmd, 3, 0)) {
+  errcode = 4;
+  goto fail;
+ }
  set_atn(0);
  gpib_listen();
  gpib_receive(sb, 1, &rl, 0);
- if(rl != 1) goto fail;
+ if(rl != 1) {
+  errcode = 5;
+  goto fail;
+ }
  gpib_talk();
  set_atn(1);
  cmd[0] = 25; /* serial poll disable */
  cmd[1] = '_';
- if(!gpib_transmit_b(cmd, 2, 0)) goto fail;
+ if(!gpib_transmit_b(cmd, 2, 0)) {
+  errcode = 6;
+  goto fail;
+ }
  set_atn(0);
  return 1;
 fail:
@@ -1335,14 +1370,14 @@ hp3478_read(uint8_t *buf, uint8_t buf_sz, uint8_t *rl, uint8_t flags)
   cmd[1] = gpib_hp3478_addr+GPIB_TALK_ADDR_OFFSET;
   set_atn(1);
   if(!gpib_transmit_b(cmd, 2, 0)) {
-   printf_P(PSTR("read: can't listen\r\n"));
+   errcode = 7;
    goto fail;
   }
   set_atn(0);
   gpib_listen();
  }
  if(gpib_receive(buf, buf_sz, rl, GPIB_END_EOI) != GPIB_END_EOI) {
-  printf_P(PSTR("read: can't receive\r\n"));
+  errcode = 8;
   goto fail;
  }
  if((flags & HP3478_CMD_LISTEN) == 0) {
@@ -1350,7 +1385,7 @@ hp3478_read(uint8_t *buf, uint8_t buf_sz, uint8_t *rl, uint8_t flags)
   set_atn(1);
   cmd[0] = '_';
   if(!gpib_transmit_b(cmd, 1, 0)) {
-  printf_P(PSTR("read: can't untalk\r\n"));
+   errcode = 9;
    goto fail;
   }
   set_atn(0);
@@ -1373,9 +1408,18 @@ hp3478_display(const char display[], uint8_t len, uint8_t flags)
 
  cmd[0] = 'D'; /* display */
  cmd[1] = (flags & HP3478_DISP_HIDE_ANNUNCIATORS) != 0 ? '3' : '2';
- if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT|HP3478_CMD_NO_LF)) return 0;
- if(!hp3478_cmd((const uint8_t*)display, len, HP3478_CMD_CONT)) return 0;
- if(!hp3478_cmd(0, 0, flags)) return 0; /* send additional LF */
+ if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT|HP3478_CMD_NO_LF)) {
+  L2_ERRCODE(1);
+  return 0;
+ }
+ if(!hp3478_cmd((const uint8_t*)display, len, HP3478_CMD_CONT)) {
+  L2_ERRCODE(2);
+  return 0;
+ }
+ if(!hp3478_cmd(0, 0, flags)) {
+  L2_ERRCODE(3);
+  return 0; /* send additional LF */
+ }
  return 1;
 }
 
@@ -1386,9 +1430,18 @@ hp3478_display_P(const char *display, uint8_t flags)
 
  cmd[0] = 'D'; /* display */
  cmd[1] = (flags & HP3478_DISP_HIDE_ANNUNCIATORS) != 0 ? '3' : '2';
- if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT|HP3478_CMD_NO_LF)) return 0;
- if(!hp3478_cmd_P(display, HP3478_CMD_CONT)) return 0;
- if(!hp3478_cmd(0, 0, flags)) return 0; /* send additional LF */
+ if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT|HP3478_CMD_NO_LF)) {
+  L2_ERRCODE(1);
+  return 0;
+ }
+ if(!hp3478_cmd_P(display, HP3478_CMD_CONT)) {
+  L2_ERRCODE(2);
+  return 0;
+ }
+ if(!hp3478_cmd(0, 0, flags)) {
+  L2_ERRCODE(3);
+  return 0; /* send additional LF */
+ }
  return 1;
 }
 
@@ -1401,7 +1454,10 @@ hp3478_get_reading(struct hp3478_reading *reading, uint8_t flags)
  uint8_t i;
  uint8_t len;
 
- if(!hp3478_read(buf, sizeof(buf), &len, flags)) return 0;
+ if(!hp3478_read(buf, sizeof(buf), &len, flags)) {
+  L2_ERRCODE(4);
+  return 0;
+ }
 
  i = 0;
  sign = buf[0] == '-';
@@ -1412,7 +1468,10 @@ hp3478_get_reading(struct hp3478_reading *reading, uint8_t flags)
   else v = v*10 + (buf[i]-'0');
  }
  i++;
- if(len-i < 2) return 0;
+ if(len-i < 2) {
+  L2_ERRCODE(5);
+  return 0;
+ }
  reading->value = sign ? -v : v;
  sign = buf[i++] == '-';
  reading->exp = sign ? '0'-buf[i] : buf[i]-'0';
@@ -1423,8 +1482,14 @@ static uint8_t
 hp3478_get_status(uint8_t st[5])
 {
  uint8_t rl;
- if(!hp3478_cmd_P(PSTR("B"), HP3478_CMD_TALK)) return 0;
- if(!hp3478_read(st, 5, &rl, 0)) return 0;
+ if(!hp3478_cmd_P(PSTR("B"), HP3478_CMD_TALK)) {
+  L2_ERRCODE(6);
+  return 0;
+ }
+ if(!hp3478_read(st, 5, &rl, 0)) {
+  L2_ERRCODE(7);
+  return 0;
+ }
  return rl == 5;
 }
 
@@ -1564,7 +1629,10 @@ static struct hp3478_reading hp3478_rel_ref;
 static uint8_t
 hp3478_rel_start(uint8_t st1, const struct hp3478_reading *r)
 {
- if(!hp3478_cmd_P(PSTR("M21T1"), 0)) return 0;
+ if(!hp3478_cmd_P(PSTR("M21T1"), 0)) {
+  L2_ERRCODE(8);
+  return 0;
+ }
  hp3478_rel_mode = st1;
  hp3478_rel_ref = *r;
  return 1;
@@ -1593,7 +1661,11 @@ hp3478_rel_handle_data(struct hp3478_reading *r)
  }
  out.value = in.value - ref.value;
 
- return hp3478_display_reading(&out, hp3478_rel_mode, '*', 0);
+ if(!hp3478_display_reading(&out, hp3478_rel_mode, '*', 0)) {
+  L3_ERRCODE(30);
+  return 0;
+ }
+ return 1;
 }
 
 static uint8_t hp3478_menu_pos;
@@ -1635,7 +1707,7 @@ hp3478_menu_next(uint8_t st1, struct hp3478_reading *r, uint8_t pos)
          case HP3478_MENU_OHM_AUTOHOLD:
                  return HP3478_MENU_OHM_MINMAX;
          case HP3478_MENU_OHM_MINMAX:
-                 return HP3478_MENU_TEMP;
+                 return HP3478_MENU_TEMP; /* TODO: skip temp if open */
          case HP3478_MENU_AUTOHOLD:
                  return HP3478_MENU_MINMAX;
          case HP3478_MENU_TEMP:
@@ -1662,15 +1734,22 @@ hp3478_menu_show(uint8_t pos)
  }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
- return hp3478_display_P(s, HP3478_DISP_HIDE_ANNUNCIATORS|HP3478_CMD_CONT);
+ if(!hp3478_display_P(s, HP3478_DISP_HIDE_ANNUNCIATORS|HP3478_CMD_CONT)) {
+  L3_ERRCODE(1);
+  return 0;
+ }
 #pragma GCC diagnostic pop
+ return 1;
 }
 
 static uint8_t 
 hp3478_menu_restart_btn_detect(void)
 {
  /* invalid command to trigger HP3478_SB_SYNERR */
- if(!hp3478_cmd_P(PSTR("A"), HP3478_CMD_REMOTE|HP3478_CMD_TALK)) return 0;
+ if(!hp3478_cmd_P(PSTR("A"), HP3478_CMD_REMOTE|HP3478_CMD_TALK)) {
+  L2_ERRCODE(9);
+  return 0;
+ }
  hp3478_btn_detect_stage = 0;
  return 1;
 }
@@ -1679,8 +1758,14 @@ static uint8_t
 hp3478_menu_init(uint8_t st1, struct hp3478_reading *r)
 {
  hp3478_menu_pos = hp3478_menu_next(st1, r, 0);
- if(!hp3478_menu_show(hp3478_menu_pos)) return 0;
- if(!hp3478_menu_restart_btn_detect()) return 0;
+ if(!hp3478_menu_show(hp3478_menu_pos)) {
+  L4_ERRCODE(2);
+  return 0;
+ }
+ if(!hp3478_menu_restart_btn_detect()) {
+  L4_ERRCODE(3);
+  return 0;
+ }
  return 1;
 }
 
@@ -1720,7 +1805,10 @@ hp3478_menu_process(uint8_t ev)
   return hp3478_menu_pos;
  }
                   
- hp3478_menu_restart_btn_detect();
+ if(!hp3478_menu_restart_btn_detect()) {
+  L3_ERRCODE(2);
+  return HP3478_MENU_ERROR;
+ }
  return HP3478_MENU_WAIT;
 }
 
@@ -1730,7 +1818,10 @@ static uint8_t
 hp3478_xohm_init(void)
 {
  hp3478_xohm_10M = 0;
- if(!hp3478_cmd_P(PSTR("F7M21"), 0)) return 0; // FIXME: F7N5M21?
+ if(!hp3478_cmd_P(PSTR("F7M21"), 0)) {
+  L2_ERRCODE(10);
+  return 0; // FIXME: F7N5M21?
+ }
  return 1;
 }
 
@@ -1743,7 +1834,10 @@ hp3478_xohm_handle_data(struct hp3478_reading *reading)
  if(hp3478_xohm_10M == 0) hp3478_xohm_10M = rr.value;
 
  if(hp3478_xohm_10M <= rr.value + 100)  {
-  if(!hp3478_display_P(PSTR("  OVLD  GOHM"), 0)) return 0;
+  if(!hp3478_display_P(PSTR("  OVLD  GOHM"), 0)) {
+   L4_ERRCODE(4);
+   return 0;
+  }
   return 1;
  }
  if(rr.value < 0) rr.value = 0;
@@ -1759,7 +1853,11 @@ hp3478_xohm_handle_data(struct hp3478_reading *reading)
   r /= 10;
  }
  rr.value = r;
- return hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 'z', 0);
+ if(!hp3478_display_reading(&rr, HP3478_ST_FUNC_2WOHM|HP3478_ST_N_DIGITS5, 'z', 0)) {
+  L3_ERRCODE(3);
+  return 0;
+ }
+ return 1;
 }
 
 static uint8_t minmax_state = 0;
@@ -1767,10 +1865,16 @@ static uint8_t
 hp3478_diode_init(void)
 {
  uint8_t s[5];
- if(!hp3478_get_status(s)) return 0;
+ if(!hp3478_get_status(s)) {
+  L3_ERRCODE(4);
+  return 0;
+ }
  hp3478_saved_state[0] = s[0];
  hp3478_saved_state[1] = s[1];
- if(!hp3478_cmd_P(PSTR("R3M21"), 0)) return 0;
+ if(!hp3478_cmd_P(PSTR("R3M21"), 0)) {
+  L3_ERRCODE(5);
+  return 0;
+ }
  minmax_state = 1;
  return 1;
 }
@@ -1781,23 +1885,36 @@ hp3478_diode_handle_data(struct hp3478_reading *reading)
  if(reading->exp == 9) {
   if(minmax_state) {
    minmax_state = 0;
-   if(!hp3478_display_P(PSTR("     >3 V"), HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+   if(!hp3478_display_P(PSTR("     >3 V"), HP3478_DISP_HIDE_ANNUNCIATORS)) {
+    L3_ERRCODE(6);
+    return 0;
+   }
   }
   return 1;
  }
  minmax_state = 1;
  reading->exp = 0;
- return hp3478_display_reading(reading, hp3478_saved_state[0], 'd', 0);
+ if(!hp3478_display_reading(reading, hp3478_saved_state[0], 'd', 0)) {
+  L3_ERRCODE(7);
+  return 0;
+ }
+ return 1;
 }
 
 static uint8_t 
 hp3478_temp_init(void)
 {
  uint8_t s[5];
- if(!hp3478_get_status(s)) return 0;
+ if(!hp3478_get_status(s)) {
+  L3_ERRCODE(8);
+  return 0;
+ }
  hp3478_saved_state[0] = s[0];
  /* hp3478_saved_state[1] = s[1]; */
- if(!hp3478_cmd_P(PSTR("M21"), 0)) return 0;
+ if(!hp3478_cmd_P(PSTR("M21"), 0)) {
+  L3_ERRCODE(9);
+  return 0;
+ }
  minmax_state = 1;
  return 1;
 }
@@ -1808,7 +1925,10 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
  if(reading->exp == 9) {
   if(minmax_state) {
    minmax_state = 0;
-   if(!hp3478_display_P(PSTR("  OPEN"), HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+   if(!hp3478_display_P(PSTR("  OPEN"), HP3478_DISP_HIDE_ANNUNCIATORS)) {
+    L3_ERRCODE(10);
+    return 0;
+   }
   }
   return 1;
  }
@@ -1828,9 +1948,11 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
   reading->exp = 0;
   reading->dot = 3;
  }
- return hp3478_display_reading(reading, hp3478_saved_state[0], 'c', 0);
+ if(!hp3478_display_reading(reading, hp3478_saved_state[0], 'c', 0)) {
+  L3_ERRCODE(11);
+ }
+ return 0; 
 }
-
 
 static uint8_t 
 hp3478_cont_fini(void)
@@ -1853,7 +1975,11 @@ hp3478_cont_fini(void)
  cmd[4] = 'Z';
  if(s2 & HP3478_ST_AUTOZERO) cmd[5] = '1';
  else cmd[5] = '0';
- return hp3478_cmd(cmd, sizeof(cmd), 0);
+ if(!hp3478_cmd(cmd, sizeof(cmd), 0)) {
+  L2_ERRCODE(11);
+  return 0;
+ }
+ return 1;
 }
 
 
@@ -1871,20 +1997,33 @@ hp3478_cont_show_thres(void)
  r.dot = dot_exp & 0x0f;
  r.exp = dot_exp >> 4;
 
- return hp3478_display_reading(&r, HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM, 'b', HP3478_DISP_HIDE_ANNUNCIATORS);
+ if(!hp3478_display_reading(&r, HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM, 'b', HP3478_DISP_HIDE_ANNUNCIATORS)) {
+  L3_ERRCODE(12);
+  return 0;
+ }
+ return 1;
 }
 
 static uint8_t 
 hp3478_cont_init(void)
 {
  uint8_t s[5];
- if(!hp3478_get_status(s)) return 0;
+ if(!hp3478_get_status(s)) {
+  L3_ERRCODE(13);
+  return 0;
+ }
  hp3478_saved_state[0] = s[0];
  hp3478_saved_state[1] = s[1];
  s[0] = 'R';
  s[1] = '1'+cont_range;
- if(!hp3478_cmd(s, 2, HP3478_CMD_NO_LF)) return 0;
- if(!hp3478_cmd_P(PSTR("N3M21Z0"), 0)) return 0;
+ if(!hp3478_cmd(s, 2, HP3478_CMD_NO_LF)) {
+  L3_ERRCODE(14);
+  return 0;
+ }
+ if(!hp3478_cmd_P(PSTR("N3M21Z0"), 0)) {
+  L3_ERRCODE(15);
+  return 0;
+ }
  if(!hp3478_cont_show_thres()) return 0;
  cont_latch_dncnt = 0;
  return 1;
@@ -1902,9 +2041,15 @@ static uint8_t
 hp3478_minmax_init(void)
 {
  uint8_t s[5];
- if(!hp3478_get_status(s)) return 0;
+ if(!hp3478_get_status(s)) {
+  L3_ERRCODE(16);
+  return 0;
+ }
  hp3478_saved_state[0] = s[0];
- if(!hp3478_cmd_P(PSTR("M21"), 0)) return 0;
+ if(!hp3478_cmd_P(PSTR("M21"), 0)) {
+  L3_ERRCODE(17);
+  return 0;
+ }
  minmax_state = 0;
  return 1;
 }
@@ -1996,36 +2141,57 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
                  if(!key_press) break;
                  minmax_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MIN;
                  if((s & MINMAX_MIN) == 0) {
-                  if(!hp3478_display_P(PSTR("NO MIN"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  if(!hp3478_display_P(PSTR("NO MIN"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
+                   L3_ERRCODE(18);
+                   return 0;
+                  }
                  } else {
                   d = minmax_min;
-                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '-', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '-', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
+                   L3_ERRCODE(19);
+                   return 0;
+                  }
                  }
                  return 1;
          case MINMAX_DISP_MIN:
                  if(!key_press) {
                   if((r & MINMAX_MIN) == 0) break;
                   d = minmax_min;
-                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '-', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '-', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
+                   L3_ERRCODE(20);
+                   return 0;
+                  }
                   return 1;
                  }
                  minmax_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MAX;
                  if((s & MINMAX_MAX) == 0) {
-                  if(!hp3478_display_P(PSTR("NO MAX"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  if(!hp3478_display_P(PSTR("NO MAX"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
+                   L3_ERRCODE(21);
+                   return 0;
+                  }
                  } else {
                   d = minmax_max;
-                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
+                   L3_ERRCODE(22);
+                   return 0;
+                  }
                  }
                  return 1;
          case MINMAX_DISP_MAX:
                  if(!key_press) {
                   if((r & MINMAX_MAX) == 0) break;
                   d = minmax_max;
-                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) return 0;
+                  if(!hp3478_display_reading(&d, hp3478_saved_state[0], '+', HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
+                   L3_ERRCODE(23);
+                   return 0;
+                  }
                   return 1;
                  }
                  minmax_state = s & ~MINMAX_DISP;
-                 if(!hp3478_cmd_P("D1", HP3478_CMD_CONT)) return 0;
+                 if(!hp3478_cmd_P("D1", HP3478_CMD_CONT)) {
+                  L3_ERRCODE(24);
+                  return 0;
+                 }
                  return 1;
  }
  /* nothing to do */
@@ -2038,10 +2204,16 @@ hp3478_autohold_init(void)
 {
  uint8_t s[5];
  ahld_n_stable = 0;
- if(!hp3478_get_status(s)) return 0;
+ if(!hp3478_get_status(s)) {
+  L3_ERRCODE(25);
+  return 0;
+ }
  hp3478_saved_state[0] = s[0];
  hp3478_saved_state[1] = s[1];
- if(!hp3478_cmd_P(PSTR("M21T1"), 0)) return 0;
+ if(!hp3478_cmd_P(PSTR("M21T1"), 0)) {
+  L3_ERRCODE(26);
+  return 0;
+ }
  return 1;
 }
 
@@ -2089,7 +2261,10 @@ hp3478_autohold_process(uint8_t locked, uint8_t sb)
  uint8_t ret;
 
  if(!(sb & HP3478_SB_DREADY)) return AHLD_NOP;
- if(!hp3478_get_reading(&r, HP3478_CMD_CONT)) return AHLD_ERROR;
+ if(!hp3478_get_reading(&r, HP3478_CMD_CONT)) {
+  L3_ERRCODE(27);
+  return AHLD_ERROR;
+ }
 
  nstab = ahld_n_stable;
  ret = AHLD_NOP;
@@ -2118,7 +2293,10 @@ hp3478_autohold_process(uint8_t locked, uint8_t sb)
            && abs(r.value) >= hp3478_autohold_min_value(st)) {
   if(++nstab == HP3478_AUTOHOLD_STABLE_N) {
 #ifdef AUTO_HOLD_NO_RESUME
-   if(!hp3478_cmd_P(PSTR("T4"), 0)) return AHLD_ERROR;
+   if(!hp3478_cmd_P(PSTR("T4"), 0)) {
+    L3_ERRCODE(28);
+    return AHLD_ERROR;
+   }
 #else
    if(locked 
           && abs(r.value - minmax_max.value) < HP3478_AUTOHOLD_STABLE_D
@@ -2146,7 +2324,10 @@ hp3478_autohold_process(uint8_t locked, uint8_t sb)
  if(locked) return ret;
 #endif
 
- if(!hp3478_display_reading(&r, st, '?', 0)) return AHLD_ERROR;
+ if(!hp3478_display_reading(&r, st, '?', 0)) {
+  L3_ERRCODE(29);
+  return AHLD_ERROR;
+ }
  return ret;
 }
 
@@ -2154,6 +2335,33 @@ hp3478_autohold_process(uint8_t locked, uint8_t sb)
  state = HP3478_INIT; \
  return 250; \
 } while(0)
+
+#define HP3478_REINIT_ERR(C) do { \
+ state = HP3478_INIT; \
+ L4_ERRCODE(C); \
+ return 250; \
+} while(0)
+
+static char 
+hex_digit(uint8_t d)
+{
+ return d < 10 ? d + '0' : d + ('A' - 10);
+}
+
+static uint8_t
+hp3478_display_err(void)
+{
+ char buf[sizeof("E:XXXXXXXX")] = "E:";
+ buf[2] = hex_digit(errcode4>>4);
+ buf[3] = hex_digit(errcode4&15);
+ buf[4] = hex_digit(errcode3>>4);
+ buf[5] = hex_digit(errcode3&15);
+ buf[6] = hex_digit(errcode2>>4);
+ buf[7] = hex_digit(errcode2&15);
+ buf[8] = hex_digit(errcode>>4);
+ buf[9] = hex_digit(errcode&15);
+ return hp3478_display(buf, 10, 0);
+}
 
 static uint16_t
 hp3478a_handler(uint8_t ev)
@@ -2201,46 +2409,43 @@ hp3478a_handler(uint8_t ev)
  }
 
  if(state != HP3478_INIT && state != HP3478_MENU && state != HP3478_MMAX) {
-  if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
+  if(!hp3478_get_srq_status(&sb)) HP3478_REINIT_ERR(5);
   if(sb & HP3478_SB_PWRSRQ) HP3478_REINIT;
   if(sb & HP3478_SB_FRPSRQ) {
    switch(state) {
           case HP3478_AHLL:
           case HP3478_AHLD:
                   beep_off();
-                  hp3478_cmd_P(PSTR("KM20D1T1"), 0);
+                  if(!hp3478_cmd_P(PSTR("KM20D1T1"), 0)) HP3478_REINIT_ERR(6);
                   break;
 
           case HP3478_IDLE:
                  if((sb & HP3478_SB_DREADY) != 0)
-                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) {
-                   printf_P(PSTR("idle: get reading failed\r\n"));
-                   HP3478_REINIT;
-                  }
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(7);
 
                  /* K is required, because serial poll doesn't clear status bits
                     immediately. Otherwise next SRQ still may be seen as FP SRQ. */  
-                 if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
-                 if(!hp3478_get_status(st)) HP3478_REINIT;
+                 if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT_ERR(8);
+                 if(!hp3478_get_status(st)) HP3478_REINIT_ERR(9);
                  if((st[1] & HP3478_ST_INT_TRIGGER) == 0) {
                   if((sb & HP3478_SB_DREADY) == 0) {
-                   if(!hp3478_cmd_P(PSTR("M21"), 0)) HP3478_REINIT;
+                   if(!hp3478_cmd_P(PSTR("M21"), 0)) HP3478_REINIT_ERR(10);
                    state = HP3478_RELS;
                    return 1800;
                   }
                   if(reading.exp == 9) {
-                   if(!hp3478_autohold_init()) HP3478_REINIT;
+                   if(!hp3478_autohold_init()) HP3478_REINIT_ERR(11);
                    state = HP3478_AHLD;
                    return 0xffff;
                   }
                           
-                  if(!hp3478_rel_start(st[0], &reading)) HP3478_REINIT;
+                  if(!hp3478_rel_start(st[0], &reading)) HP3478_REINIT_ERR(12);
                   state = HP3478_RELA;
                   return 0xffff;
                  }
 
                  if(!hp3478_menu_init(st[0], &reading)) {
-                  printf_P(PSTR("idle: menu init failed\r\n"));
+                  /* no L4 code - only one call to menu_init */
                   HP3478_REINIT;
                  }
                  state = HP3478_MENU;
@@ -2248,10 +2453,10 @@ hp3478a_handler(uint8_t ev)
 
           case HP3478_CONT:
           case HP3478_DIOD:
-                  hp3478_cont_fini();
+                  if(!hp3478_cont_fini()) HP3478_REINIT_ERR(13);
 
           default:
-                  hp3478_cmd_P(PSTR("KM20D1"), 0);
+                  if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT_ERR(14);
    }
    state = HP3478_IDLE;
    return TIMEOUT_INF;
@@ -2262,13 +2467,20 @@ hp3478a_handler(uint8_t ev)
          case HP3478_INIT:
                  if(hp3478_cmd_P(PSTR("KM20"), 0)) {
                   printf_P(PSTR("init: ok\r\n"));
+                  if(errcode|errcode2|errcode3|errcode4) {
+                    if(!hp3478_display_err()) return 2000;
+                    errcode = 0;
+                    errcode2 = 0;
+                    errcode3 = 0;
+                    errcode4 = 0;
+                  }
                   state = HP3478_IDLE;
                   return 0xffff;
                  }
                  return 2000; /* retry initialization after 2 sec */
 
          case HP3478_IDLE:
-                 if(!hp3478_cmd_P(PSTR("K"), 0)) HP3478_REINIT;
+                 if(!hp3478_cmd_P(PSTR("K"), 0)) HP3478_REINIT_ERR(15);
                  printf_P(PSTR("idle: unexpected ev %x %x\r\n"), (unsigned)ev, (unsigned)sb);
                  return TIMEOUT_INF;
 
@@ -2277,12 +2489,11 @@ hp3478a_handler(uint8_t ev)
                          default:
                                                  printf_P(PSTR("menu: unknown\r\n"));
                          case HP3478_MENU_ERROR: 
-                                                 printf_P(PSTR("menu: error\r\n"));
                                                  HP3478_REINIT;
                          case HP3478_MENU_BEEP: 
                          case HP3478_MENU_XOHM_BEEP: 
                                                  state = HP3478_CONT;
-                                                 if(!hp3478_cont_init()) HP3478_REINIT;
+                                                 if(!hp3478_cont_init()) HP3478_REINIT_ERR(16);
                                                  return 0xffff;
                          case HP3478_MENU_XOHM: 
                                                  state = HP3478_XOHM;
@@ -2299,7 +2510,7 @@ hp3478a_handler(uint8_t ev)
                          case HP3478_MENU_OHM_AUTOHOLD: 
                                                  state = HP3478_AHLD;
                                                  printf_P(PSTR("menu: autohold\r\n"));
-                                                 if(!hp3478_autohold_init()) HP3478_REINIT;
+                                                 if(!hp3478_autohold_init()) HP3478_REINIT_ERR(17);
                                                  return 0xffff;
 
                          case HP3478_MENU_DIODE: 
@@ -2325,19 +2536,19 @@ hp3478a_handler(uint8_t ev)
 
          case HP3478_RELS:
                  if((ev & EV_TIMEOUT) != 0) {
-                  if(!hp3478_autohold_init()) HP3478_REINIT;
+                  if(!hp3478_autohold_init()) HP3478_REINIT_ERR(18);
                   state = HP3478_AHLD;
                   return 0xffff;
                  }
                  if((sb & HP3478_SB_DREADY) == 0) return TIMEOUT_CONT;
-                 if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
+                 if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(19);
                  if(reading.exp == 9) {
-                  if(!hp3478_autohold_init()) HP3478_REINIT;
+                  if(!hp3478_autohold_init()) HP3478_REINIT_ERR(20);
                   state = HP3478_AHLD;
                   return 0xffff;
                  }
-                 if(!hp3478_get_status(st)) HP3478_REINIT;
-                 if(!hp3478_rel_start(st[0], &reading)) HP3478_REINIT;
+                 if(!hp3478_get_status(st)) HP3478_REINIT_ERR(21);
+                 if(!hp3478_rel_start(st[0], &reading)) HP3478_REINIT_ERR(22);
                  state = HP3478_RELA;
                  return 0xffff;
 
@@ -2367,44 +2578,43 @@ hp3478a_handler(uint8_t ev)
          case HP3478_RELA:
                   // TODO: also detect Local button?
                  if(sb & HP3478_SB_DREADY) {
-                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(23);
                   if(!hp3478_rel_handle_data(&reading)) { //TODO: pass status bytes, so it knows that nothing's changed
-                   if(!hp3478_cmd_P(PSTR("M20D1"), 0)) HP3478_REINIT;
-                   state = HP3478_IDLE;
+                   HP3478_REINIT;
                   }
                   return 0xffff;
                  } 
                  return 0xffff; /* what was it? */
          case HP3478_TEMP:
                 if(sb & HP3478_SB_DREADY) {
-                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(24);
+                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT_ERR(25);
                   if(!hp3478_temp_handle_data(&reading)) HP3478_REINIT;
                   return 0xffff;
                 }
                 return 0xffff;
          case HP3478_XOHM:
                 if(sb & HP3478_SB_DREADY) {
-                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT;
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(26);
+                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT_ERR(27);
                   if(!hp3478_xohm_handle_data(&reading)) HP3478_REINIT;
                   return 0xffff;
                 }
                 return 0xffff;
          case HP3478_CONT:
                 if(sb & HP3478_SB_DREADY) {
-                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(28);
                   /* uart_tx('r'); */
                   if(reading.value < cont_threshold*100) {
                    if(!cont_latch_dncnt) {
-                    if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT;
+                    if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT_ERR(29);
                    }
                    cont_beep((uint16_t)(reading.value/100));
                    cont_latch_dncnt = cont_latch;
                   } else if(buzzer) {
                    if(cont_latch_dncnt) cont_latch_dncnt--;
                    else {
-                    if(!hp3478_cont_show_thres()) HP3478_REINIT;
+                    if(!hp3478_cont_show_thres()) HP3478_REINIT_ERR(30);
                     beep_off();
                    }
                   }
@@ -2413,18 +2623,18 @@ hp3478a_handler(uint8_t ev)
                                something and keep reading rate at maximum. 
                                The expected reading rate is 78 rdg/sec @50Hz. */
                 }
-                hp3478_get_status(st);
+                if(!hp3478_get_status(st)) HP3478_REINIT_ERR(31);
                 if(st[0] != ((cont_range+1)<<2|HP3478_ST_N_DIGITS3|HP3478_ST_FUNC_2WOHM)
                      || (st[1]&7) != HP3478_ST_INT_TRIGGER) {
-                   hp3478_cont_fini();
-                   hp3478_cmd_P(PSTR("M20D1"), 0);
+                   if(!hp3478_cont_fini()) HP3478_REINIT_ERR(31);
+                   if(!hp3478_cmd_P(PSTR("M20D1"), 0)) HP3478_REINIT_ERR(32);
                    state = HP3478_IDLE;
                 }
                 return TIMEOUT_INF;
          case HP3478_DIOD:
                 if(sb & HP3478_SB_DREADY) {
-                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT;
-                  if(!hp3478_diode_handle_data(&reading)) HP3478_REINIT;
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(33);
+                  if(!hp3478_diode_handle_data(&reading)) HP3478_REINIT_ERR(34);
                 }
                 return TIMEOUT_INF;
          case HP3478_MMAX:
@@ -2432,19 +2642,19 @@ hp3478a_handler(uint8_t ev)
                   uint8_t k;
                   k = hp3478_minmax_detect_key();
 
-                 if(!hp3478_get_srq_status(&sb)) HP3478_REINIT;
+                 if(!hp3478_get_srq_status(&sb)) HP3478_REINIT_ERR(35);
                  if(k && (sb&HP3478_SB_FRPSRQ) == 0) {
-                   if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT;
+                   if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT_ERR(36);
                    state = HP3478_IDLE;
                    return 0xffff;
                  }
                  minmax_ev = 0;
                  if(sb & HP3478_SB_DREADY) {
-                   if(!hp3478_get_reading(&reading, HP3478_CMD_CONT)) HP3478_REINIT;
+                   if(!hp3478_get_reading(&reading, HP3478_CMD_CONT)) HP3478_REINIT_ERR(37);
                    minmax_ev = hp3478_minmax_handle_data(&reading);
                  }
                  if(!hp3478_minmax_display_data(minmax_ev, sb&HP3478_SB_FRPSRQ)) HP3478_REINIT;
-                 if(!hp3478_cmd_P(PSTR("M21"), HP3478_CMD_CONT)) HP3478_REINIT; /* restore mask after minmax_detect_key */
+                 if(!hp3478_cmd_P(PSTR("M21"), HP3478_CMD_CONT)) HP3478_REINIT_ERR(38); /* restore mask after minmax_detect_key */
                 }
 
                 return 0xffff;
