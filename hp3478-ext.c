@@ -98,6 +98,9 @@
 #define HP3478_ST_AUTORANGE   (1<<1)
 #define HP3478_ST_AUTOZERO    (1<<2)
 
+/* status byte 3 */
+#define HP3478_ST_SRQ_DREADY (1<<0)
+
 #define SET_PORT_PIN(PORT, PIN, V) if(V) PORT |= PIN; else PORT &= ~PIN
 #define CAT(a, b) a ## b
 #define PORT(X) CAT(PORT, X)
@@ -1469,6 +1472,7 @@ hp3478_get_reading(struct hp3478_reading *reading, uint8_t flags)
  }
  i++;
  if(len-i < 2) {
+  printf_P(PSTR("l2err 5 %d %d\n"), len, i);
   L2_ERRCODE(5);
   return 0;
  }
@@ -1682,6 +1686,7 @@ static uint8_t hp3478_menu_pos;
 #define HP3478_MENU_OHM_AUTOHOLD 11
 #define HP3478_MENU_TEMP 12
 #define HP3478_MENU_DIODE 13
+#define HP3478_MENU_XOHM_DIODE 14
 
 static uint8_t hp3478_btn_detect_stage;
 
@@ -1700,14 +1705,17 @@ hp3478_menu_next(uint8_t st1, struct hp3478_reading *r, uint8_t pos)
          case HP3478_MENU_XOHM_BEEP:
                  return HP3478_MENU_XOHM;
          case HP3478_MENU_XOHM:
+                 return HP3478_MENU_XOHM_DIODE;
          case HP3478_MENU_BEEP:
                  return HP3478_MENU_DIODE;
+         case HP3478_MENU_XOHM_DIODE:
+                 return HP3478_MENU_AUTOHOLD;
          case HP3478_MENU_DIODE:
                  return HP3478_MENU_OHM_AUTOHOLD;
          case HP3478_MENU_OHM_AUTOHOLD:
                  return HP3478_MENU_OHM_MINMAX;
          case HP3478_MENU_OHM_MINMAX:
-                 return HP3478_MENU_TEMP; /* TODO: skip temp if open */
+                 return HP3478_MENU_TEMP;
          case HP3478_MENU_AUTOHOLD:
                  return HP3478_MENU_MINMAX;
          case HP3478_MENU_TEMP:
@@ -1729,6 +1737,7 @@ hp3478_menu_show(uint8_t pos)
          case HP3478_MENU_XOHM: s = PSTR("M: XOHM"); break;
          case HP3478_MENU_OHM_AUTOHOLD:
          case HP3478_MENU_AUTOHOLD: s = PSTR("M: AUTOHOLD"); break;
+         case HP3478_MENU_XOHM_DIODE:
          case HP3478_MENU_DIODE: s = PSTR("M: DIODE"); break;
          case HP3478_MENU_TEMP: s = PSTR("M: TEMP"); break;
  }
@@ -1774,6 +1783,7 @@ hp3478_menu_process(uint8_t ev)
 {  
  uint8_t sb;
 
+ /* TODO: errcodes */
  switch(hp3478_btn_detect_stage) {
          case 0:
                  if((ev & (EV_TIMEOUT|EV_SRQ)) != 0 && srq()) break;
@@ -2099,13 +2109,23 @@ hp3478_cmp_readings(const struct hp3478_reading *r1, const struct hp3478_reading
 static uint8_t 
 hp3478_minmax_detect_key(void)
 {
- if(!srq()) return 0;
- if(!hp3478_cmd_P(PSTR("M20"), HP3478_CMD_CONT)) {
-  printf_P(PSTR("M20 failed\r\n"));
+ if(!srq()) {
+  uint8_t s[5];
+
+  if(!hp3478_get_status(s)) return 1; /* it normally fails if 3478A is in LOCAL */
+  if((s[2] & HP3478_ST_SRQ_DREADY) == 0) {
+    return 1; /* Sometimes LOCAL key prevents enabling DREADY SRQ.
+                 Assume LOCAL is pressed if DREADY is not enabled here. */
+  }
+  return 0;
+ }
+ if(!hp3478_cmd_P(PSTR("M20"), HP3478_CMD_CONT)) { /* TODO: alternatively we can toggle SYNERR bit and check if 
+                                                            it's reflected in the status byte */
+  printf_P(PSTR("M20 failed\r\n")); /* TODO: errcode */
   return 1;
  }
- _delay_us(400); /* ~250 uS it takes to clear SRQ after mask update */
- if(srq()) return 1;
+ _delay_us(400); /* ~250 uS it takes to clear the SRQ after mask update */
+ if(srq()) return 1; /* It's either FPSRQ or M20 command was not accepted (due to LOCAL). */
  return 0;
 }
 
@@ -2188,7 +2208,7 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
                   return 1;
                  }
                  minmax_state = s & ~MINMAX_DISP;
-                 if(!hp3478_cmd_P("D1", HP3478_CMD_CONT)) {
+                 if(!hp3478_cmd_P(PSTR("D1"), HP3478_CMD_CONT)) {
                   L3_ERRCODE(24);
                   return 0;
                  }
@@ -2512,7 +2532,7 @@ hp3478a_handler(uint8_t ev)
                                                  printf_P(PSTR("menu: autohold\r\n"));
                                                  if(!hp3478_autohold_init()) HP3478_REINIT_ERR(17);
                                                  return 0xffff;
-
+                         case HP3478_MENU_XOHM_DIODE: 
                          case HP3478_MENU_DIODE: 
                                                  state = HP3478_DIOD;
                                                  printf_P(PSTR("menu: diode\r\n"));
@@ -2638,11 +2658,15 @@ hp3478a_handler(uint8_t ev)
                 }
                 return TIMEOUT_INF;
          case HP3478_MMAX:
-                { uint8_t minmax_ev;
-                  uint8_t k;
-                  k = hp3478_minmax_detect_key();
+                {
+                 uint8_t minmax_ev;
+                 uint8_t k;
+                 k = hp3478_minmax_detect_key();
 
                  if(!hp3478_get_srq_status(&sb)) HP3478_REINIT_ERR(35);
+                 if(sb & HP3478_SB_FRPSRQ) _delay_us(250); /* Wait for FPSRQ to be cleared to prevent double detection.
+                                                              It seems that 3478A can't keep up with us, and needs
+                                                              a break to do it's housekeeping. */
                  if(k && (sb&HP3478_SB_FRPSRQ) == 0) {
                    if(!hp3478_cmd_P(PSTR("KM20D1"), 0)) HP3478_REINIT_ERR(36);
                    state = HP3478_IDLE;
@@ -2657,7 +2681,7 @@ hp3478a_handler(uint8_t ev)
                  if(!hp3478_cmd_P(PSTR("M21"), HP3478_CMD_CONT)) HP3478_REINIT_ERR(38); /* restore mask after minmax_detect_key */
                 }
 
-                return 0xffff;
+                return 400; /* in case the LOCAL pressed just before the M21 command, wake up and detect it */
  }
  return 0xffff;
 }
