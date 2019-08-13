@@ -23,13 +23,15 @@
 #define EEP_ADDR_CONT_BEEP_P1    48 /* 2 */
 #define EEP_ADDR_CONT_BEEP_P2    52 /* 2 */
 
+#define EEP_ADDR_MODE            60 /* 2 */
+
 #define EEP_SIZE_BEEP_PERIOD      2
 #define EEP_SIZE_CONT_BEEP_P1     2
 #define EEP_SIZE_CONT_BEEP_P2     2
 #define EEP_SIZE_CONT_THRESHOLD   2
 #define EEP_SIZE_CONT_BEEP_T1     2
 #define EEP_SIZE_CONT_BEEP_T2     2
-
+#define EEP_SIZE_MODE             2
 
 /* set 0, used for uninitalized eeprom */
 #define EEP_DEF0_BEEP_DUTY        15
@@ -54,6 +56,7 @@
 #define EEP_DEF0_CONT_BEEP_D2    15
 #define EEP_DEF0_CONT_BEEP_P1    10000
 #define EEP_DEF0_CONT_BEEP_P2    10000
+#define EEP_DEF0_MODE            0
 
 /* set 1, used for the default .eep (only changes to set 0 are listed) */
 #define EEP_DEF1_HP3478_EXT_EN   1
@@ -63,3 +66,5 @@
 #define EEP_DEF2_CONT_BEEP_P1    0
 #define EEP_DEF2_CONT_BEEP_P2    0
 #define EEP_DEF2_BEEP_PERIOD     0
+
+#define EEP_PRESET_SIZE  128
