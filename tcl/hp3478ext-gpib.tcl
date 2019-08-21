@@ -168,6 +168,13 @@ proc gpibif_find_port {portid} {
   return ""
 }
 
+proc gpibif_close {} {
+ global gpib_fd
+ gpibif_send_cmd "C?_"
+ gpibif_send_cmd "L"
+ close $gpib_fd
+}
+
 proc gpib_read_status {} {
  #global gpib_fd
  #send_cmd C[format %c 24]
