@@ -24,6 +24,7 @@
 #define EEP_ADDR_CONT_BEEP_P2    52 /* 2 */
 
 #define EEP_ADDR_MODE            60 /* 2 */
+#define EEP_ADDR_EXT_MODE        62
 
 #define EEP_SIZE_BEEP_PERIOD      2
 #define EEP_SIZE_CONT_BEEP_P1     2
@@ -57,6 +58,7 @@
 #define EEP_DEF0_CONT_BEEP_P1    10000
 #define EEP_DEF0_CONT_BEEP_P2    10000
 #define EEP_DEF0_MODE            0
+#define EEP_DEF0_EXT_MODE        0
 
 /* set 1, used for the default .eep (only changes to set 0 are listed) */
 #define EEP_DEF1_HP3478_EXT_EN   1
