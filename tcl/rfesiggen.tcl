@@ -67,3 +67,11 @@ proc rfegen_cw_exp {freq_khz pwr} {
 proc rfegen_track_exp_start {start_freq_khz n_steps step_khz pwr} {
  rfegen_send_cmd C5-T:[format %07d $start_freq_khz],[format %+05.1f $pwr],[format %04d $n_steps],[format %07d $step_khz]
 }
+
+proc rfegen_reset {} {
+ rfegen_send_cmd r
+}
+
+proc rfegen_request_sn {} {
+ rfegen_send_cmd Cn 
+}
