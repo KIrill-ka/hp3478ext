@@ -1473,7 +1473,13 @@ hp3478_get_reading(struct hp3478_reading *reading, uint8_t flags)
  }
  i++;
  if(len-i < 2) {
+#if 0
+#define EEP_ERR_INFO (uint8_t*)(EEP_PRESET_SIZE*6)
+  eeprom_write_byte(EEP_ERR_INFO, len);
+  eeprom_write_byte(EEP_ERR_INFO+1, i);
+  for(i = 0; i < len; i++) eeprom_write_byte(EEP_ERR_INFO+2+i, buf[i]);
   printf_P(PSTR("l2err 5 %d %d\n"), len, i);
+#endif
   L2_ERRCODE(5);
   return 0;
  }
@@ -2867,13 +2873,15 @@ hp3478a_handler(uint8_t ev)
                 return 0xffff;
          case HP3478_CONT:
                 if(sb & HP3478_SB_DREADY) {
+                  uint16_t r;
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(28);
                   /* uart_tx('r'); */
-                  if(reading.value < cont_threshold*100) {
+                  r = reading.value/100;
+                  if(r <= cont_threshold) {
                    if(!cont_latch_dncnt) {
                     if(!hp3478_cmd_P(PSTR("D1"), 0)) HP3478_REINIT_ERR(29);
                    }
-                   cont_beep((uint16_t)(reading.value/100));
+                   cont_beep(r);
                    cont_latch_dncnt = cont_latch;
                   } else if(buzzer) {
                    if(cont_latch_dncnt) cont_latch_dncnt--;
