@@ -301,11 +301,13 @@ static uint8_t cont_range;
 
 volatile uint16_t msec_count;
 
-#define EV_TIMEOUT     1
-#define EV_SRQ         2
-#define EV_UART        4
-#define EV_EXT_DISABLE 8
-#define EV_EXT_ENABLE 16
+#define EV_TIMEOUT      1
+#define EV_SRQ          2
+#define EV_UART         4
+#define EV_EXT_DISABLE  8
+#define EV_EXT_ENABLE  16
+#define EV_PX_CMD      32
+#define EV_LEDIT_RESET 64
 
 #define TIMEOUT_INF   0xffff
 #define TIMEOUT_CONT  0xfffe
@@ -403,7 +405,6 @@ gpib_talk(void)
   nrfd_set(0);
   ndac_set(0);
 }
-
 
 static uint8_t
 gpib_receive(uint8_t *buf, uint8_t buf_size, uint8_t *n_received, uint8_t stop)
@@ -1027,7 +1028,7 @@ gpib_state_from_cmd(const uint8_t *buf, uint8_t len)
  }
 }
 
-static void 
+static uint8_t 
 command_handler(uint8_t command, uint8_t *buf, uint8_t len)
 {
   uint8_t gpib_buf[GPIB_BUF_SIZE];
@@ -1204,12 +1205,16 @@ command_handler(uint8_t command, uint8_t *buf, uint8_t len)
                    }
 
                    break;
-           case 0: 
+           case '+':
+                   if(buf[1] == '+') return EV_PX_CMD|EV_LEDIT_RESET;
            case 13: 
                    break;
+           case 0:
+                   return 0;
            default:
                    printf_P(PSTR("WRONG COMMAND\r\n"));
    }
+   return EV_LEDIT_RESET; 
 }
 
 struct hp3478_reading {
@@ -1227,12 +1232,14 @@ static uint8_t errcode4;
 #define L4_ERRCODE(X) do {errcode4 = (X);} while(0)
 
 /* flags for IO routines below */
-#define HP3478_CMD_LISTEN                 1 /* stay in listen state (hp3478a is talking, we are listening) */
-#define HP3478_CMD_TALK                   2 /* stay in talk state (hp3478a is listening, we are talking) */
-#define HP3478_CMD_REMOTE                 4 /* leave REN active */
+#define HP3478_CMD_END_CR                     GPIB_END_CR
+#define HP3478_CMD_END_LF                     GPIB_END_LF
+#define HP3478_CMD_END_EOI                    GPIB_END_EOI
+#define HP3478_CMD_LISTEN                 8 /* stay in listen state (hp3478a is talking, we are listening) */
+#define HP3478_CMD_TALK                  16 /* stay in talk state (hp3478a is listening, we are talking) */
+#define HP3478_CMD_REMOTE                32 /* leave REN active */
 #define HP3478_CMD_CONT     (HP3478_CMD_REMOTE|HP3478_CMD_TALK|HP3478_CMD_LISTEN)
-#define HP3478_DISP_HIDE_ANNUNCIATORS      8
-#define HP3478_CMD_NO_LF                 16 /* do not send LF after the command */
+#define HP3478_DISP_HIDE_ANNUNCIATORS    64
 
 uint8_t hp3478_saved_state[2];
 
@@ -1254,7 +1261,7 @@ hp3478_cmd(const uint8_t *cmd, uint8_t len, uint8_t flags)
    }
    set_atn(0);
  }
- if(!gpib_transmit_b(cmd, len, (flags & HP3478_CMD_NO_LF) ? 0 : GPIB_END_LF)) {
+ if(!gpib_transmit_b(cmd, len, flags & (GPIB_END_LF|GPIB_END_CR|GPIB_END_EOI))) {
   errcode = 2;
   goto fail;
  }
@@ -1412,15 +1419,15 @@ hp3478_display(const char display[], uint8_t len, uint8_t flags)
 
  cmd[0] = 'D'; /* display */
  cmd[1] = (flags & HP3478_DISP_HIDE_ANNUNCIATORS) != 0 ? '3' : '2';
- if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT|HP3478_CMD_NO_LF)) {
+ if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT)) {
   L2_ERRCODE(1);
   return 0;
  }
- if(!hp3478_cmd((const uint8_t*)display, len, HP3478_CMD_CONT)) {
+ if(!hp3478_cmd((const uint8_t*)display, len, HP3478_CMD_CONT|HP3478_CMD_END_LF)) {
   L2_ERRCODE(2);
   return 0;
  }
- if(!hp3478_cmd(0, 0, flags)) {
+ if(!hp3478_cmd(0, 0, flags|HP3478_CMD_END_LF)) {
   L2_ERRCODE(3);
   return 0; /* send additional LF */
  }
@@ -1434,7 +1441,7 @@ hp3478_display_P(const char *display, uint8_t flags)
 
  cmd[0] = 'D'; /* display */
  cmd[1] = (flags & HP3478_DISP_HIDE_ANNUNCIATORS) != 0 ? '3' : '2';
- if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT|HP3478_CMD_NO_LF)) {
+ if(!hp3478_cmd(cmd, 2, HP3478_CMD_CONT)) {
   L2_ERRCODE(1);
   return 0;
  }
@@ -1442,7 +1449,7 @@ hp3478_display_P(const char *display, uint8_t flags)
   L2_ERRCODE(2);
   return 0;
  }
- if(!hp3478_cmd(0, 0, flags)) {
+ if(!hp3478_cmd(0, 0, flags|HP3478_CMD_END_LF)) {
   L2_ERRCODE(3);
   return 0; /* send additional LF */
  }
@@ -2055,7 +2062,7 @@ hp3478_set_mode(uint8_t s1, uint8_t s2)
  else if(s2 & HP3478_ST_EXT_TRIGGER) cmd[p++] = '2';
  else cmd[p++] = '3';
 
- if(!hp3478_cmd(cmd, p, 0)) {
+ if(!hp3478_cmd(cmd, p, HP3478_CMD_END_LF)) {
   L2_ERRCODE(11);
   return 0;
  }
@@ -2084,7 +2091,7 @@ hp3478_cont_fini(void)
  cmd[4] = 'Z';
  if(s2 & HP3478_ST_AUTOZERO) cmd[5] = '1';
  else cmd[5] = '0';
- if(!hp3478_cmd(cmd, sizeof(cmd), 0)) {
+ if(!hp3478_cmd(cmd, sizeof(cmd), HP3478_CMD_END_LF)) {
   L2_ERRCODE(11);
   return 0;
  }
@@ -2121,7 +2128,7 @@ hp3478_cont_init(void)
  hp3478_saved_state[1] = s[1];
  s[0] = 'R';
  s[1] = '1'+cont_range;
- if(!hp3478_cmd(s, 2, HP3478_CMD_NO_LF)) {
+ if(!hp3478_cmd(s, 2, 0)) {
   L3_ERRCODE(14);
   return 0;
  }
@@ -2974,6 +2981,177 @@ load_settings(void)
  }
 }
 
+static uint16_t
+read_dec(const char *buf, uint8_t len)
+{
+ uint16_t val = 0;
+ while(len) {
+  char ch = *buf++;
+  if(ch < '0' || ch > '9') return val;
+  val = val*10 + (ch-'0');
+  len--;
+ }
+ return val;
+}
+
+static uint8_t px_eos2flags(uint8_t eos)
+{
+ uint8_t f = 0;
+ if(eos < 2) f |= HP3478_CMD_END_CR;
+ if((eos & 1) == 0) f |= HP3478_CMD_END_LF;
+ return f;
+}
+
+static uint8_t px_flags2eos(uint8_t f)
+{
+ uint8_t eos = 3;
+ if(f & HP3478_CMD_END_LF) eos = 2;
+ if(f & HP3478_CMD_END_CR) eos -= 2;
+ return eos;
+}
+
+static uint8_t 
+px_cmd_cmp(const char *cmd, const char *buf, uint8_t len)
+{
+ uint8_t l = strlen_P(cmd);
+ if(len != l) return 0;
+ return !strncmp_P((const char*)buf, cmd, l);
+}
+
+static uint8_t 
+px_cmd_cmp_1arg(const char *cmd, const char *buf, uint8_t len, uint16_t *arg)
+{
+ uint8_t l = strlen_P(cmd);
+ if(len < l+2) return 0;
+ if(strncmp_P((const char*)buf, cmd, l)) return 0;
+ if(buf[l] != ' ') return 0;
+ *arg = read_dec(buf+l+1, len-l-1);
+ return 1;
+}
+
+static void
+px_read(uint8_t *buf, uint8_t buf_sz, uint8_t end_flags, uint16_t timeout)
+{
+ uint8_t cmd[2];
+ uint16_t t;
+
+ cmd[0] = gpib_my_addr+GPIB_LISTEN_ADDR_OFFSET;
+ cmd[1] = gpib_hp3478_addr+GPIB_TALK_ADDR_OFFSET;
+ set_atn(1);
+ if(!gpib_transmit_b(cmd, 2, 0)) {
+  set_atn(0);
+  return;
+ }
+ set_atn(0);
+ gpib_listen();
+
+ t = timeout;
+ while(1) {
+  uint8_t rl, i;
+  uint8_t r = gpib_receive(buf, buf_sz, &rl, end_flags);
+  for(i = 0; i < rl; i++) uart_tx(buf[i]);
+  if(r == GPIB_END_EOI) break;
+  if(rl == 0) {
+   if(t <= GPIB_MAX_RECEIVE_TIMEOUT_mS) break;
+   t -= GPIB_MAX_RECEIVE_TIMEOUT_mS;
+  } else t = timeout;
+ }
+
+ gpib_talk();
+ set_atn(1);
+ cmd[0] = '_';
+ gpib_transmit_b(cmd, 1, 0);
+ set_atn(0);
+}
+
+static void
+px_loop(uint8_t *buf, uint8_t len)
+{
+ uint8_t cmd_start = 0;
+ uint8_t bufpos;
+#define PX_ESC 1
+ uint8_t st = 0;
+ uint8_t tx_term = 0;
+ uint16_t read_timeout_ms = GPIB_MAX_RECEIVE_TIMEOUT_mS;
+
+ len -= 2;
+ memmove(buf, buf+2, len);
+ bufpos = len;
+
+ gpib_talk();
+ set_ren(0);
+ gpib_state = 0;
+
+ while(1) {
+  uint16_t cmdarg;
+  char *cmd = (char*)buf+cmd_start;
+  len = bufpos - cmd_start;
+  if(px_cmd_cmp(PSTR("ver"), cmd, len)) {
+   printf_P(PSTR("GPIB\r\n"));
+  } else if(px_cmd_cmp_1arg(PSTR("addr"), cmd, len, &cmdarg)) {
+   gpib_hp3478_addr = cmdarg;
+   /* NOTE: gpib_state assumed to be 0 here */
+  } else if(px_cmd_cmp(PSTR("addr"), cmd, len)) {
+   printf_P(PSTR("%u\r\n"), (unsigned)gpib_hp3478_addr);
+  } else if(px_cmd_cmp_1arg(PSTR("read_tmo_ms"), cmd, len, &cmdarg)) {
+   read_timeout_ms = cmdarg;
+  } else if(px_cmd_cmp(PSTR("read_tmo_ms"), cmd, len)) {
+   printf_P(PSTR("%u\r\n"), read_timeout_ms);
+  } else if(px_cmd_cmp(PSTR("read eoi"), cmd, len) 
+               || px_cmd_cmp(PSTR("read"), cmd, len)) {
+   px_read(buf, CMD_BUF_SIZE, buf[cmd_start+4] == ' ' ? GPIB_END_EOI : 0, read_timeout_ms);
+  } else if(px_cmd_cmp(PSTR("mode"), cmd, len)) {
+   printf_P(PSTR("1\r\n"));
+  } else if(px_cmd_cmp_1arg(PSTR("auto"), cmd, len, &cmdarg)) {
+   /* TODO */
+  } else if(px_cmd_cmp(PSTR("auto"), cmd, len)) {
+   printf_P(PSTR("0\r\n"));
+  } else if(px_cmd_cmp(PSTR("eot_enable"), cmd, len)) {
+   printf_P(PSTR("0\r\n"));
+  } else if(px_cmd_cmp_1arg(PSTR("eoi"), cmd, len, &cmdarg)) {
+   if(cmdarg) tx_term |= HP3478_CMD_END_EOI;
+   else tx_term &= ~HP3478_CMD_END_EOI;
+  } else if(px_cmd_cmp(PSTR("eoi"), cmd, len)) {
+   printf_P(PSTR("%u\r\n"), (tx_term & HP3478_CMD_END_EOI) != 0);
+  } else if(px_cmd_cmp_1arg(PSTR("eos"), cmd, len, &cmdarg)) {
+   tx_term = (tx_term & ~(HP3478_CMD_END_LF|HP3478_CMD_END_CR)) | px_eos2flags(cmdarg);
+  } else if(px_cmd_cmp(PSTR("eos"), cmd, len)) {
+   printf_P(PSTR("%u\r\n"), px_flags2eos(tx_term));
+  } else if(px_cmd_cmp(PSTR("loc"), cmd, len)) {
+   set_ren(0);
+  } else if(px_cmd_cmp(PSTR("exit"), cmd, len)) {
+   set_ren(0);
+   return;
+  }
+
+  bufpos = 0;
+  while(1) {
+   char ch = uart_rx();
+   if(st & PX_ESC) st &= ~PX_ESC;
+   else if(ch == '+') {
+    ch = uart_rx();
+    if(ch != '+') continue;
+    cmd_start = bufpos;
+    while(1) {
+     ch = uart_rx();
+     if(ch == '\r' || ch == '\n') break;
+     buf[bufpos++] = ch;
+    }
+    break; /* go to outer loop to process the command */
+   } else if(ch == 27) {
+    st |= PX_ESC;
+    continue;
+   } else if(ch == '\r' || ch == '\n') {
+    if(bufpos != 0) {
+     hp3478_cmd(buf, bufpos, tx_term|HP3478_CMD_REMOTE);
+    }
+    bufpos = 0;
+   }
+   buf[bufpos++] = ch;
+  }
+ }
+}
+
 void main(void) __attribute__((noreturn));
 void main(void) 
 {
@@ -3020,11 +3198,11 @@ void main(void)
 #endif
   while (1) {
    // FIXME: ignore some commands so not to interrupt "EXT" mode
-   if(command) command_handler(command, buf, bufPos);
-   if(command) line_edit(0, buf, &bufPos); /* prepare for next command */
-
-   ev = 0;
-   if(ext_state != hp3478_ext_enable) {
+   ev = command_handler(command, buf, bufPos);
+   if((ev & EV_PX_CMD) != 0 && ext_state) {
+    ev |= EV_EXT_DISABLE;
+    ext_state = 0;
+   } else if(ext_state != hp3478_ext_enable) {
     ev |= hp3478_ext_enable?EV_EXT_ENABLE:EV_EXT_DISABLE;
     ext_state = hp3478_ext_enable;
    }
@@ -3042,6 +3220,11 @@ void main(void)
     if(timeout != TIMEOUT_CONT) timeout_ts = msec_get() + timeout;
    }
 
+   if(ev & EV_PX_CMD) {
+    px_loop(buf, bufPos);
+    ev &= ~EV_UART; /* px_loop reads uart on it's own, so the flag is not valid anymore */
+   }
+   if(ev & EV_LEDIT_RESET) line_edit(0, buf, &bufPos); /* prepare for the next command */
    if(ev & EV_UART) command = line_edit(uart_rx(), buf, &bufPos);
    else command = 0;
   }
