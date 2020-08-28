@@ -23,6 +23,7 @@
 
 #include "uart.h"
 #include "eepmap.h"
+#include "version.h"
 
 
 /*
@@ -1999,6 +2000,7 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
 #define RTD_B -5.8019e-7
 #define RTD_C -4.2735e-12
 #define RTD_R0 1000.0
+ /* 700-102BAB-B00 HONEYWELL */
  { 
   uint8_t i;
   double t, r = reading->value;
@@ -2012,8 +2014,9 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
  }
  if(!hp3478_display_reading(reading, hp3478_saved_state[0], 'c', 0)) {
   L3_ERRCODE(11);
+  return 0; 
  }
- return 0; 
+ return 1; 
 }
 
 static uint8_t 
@@ -3081,13 +3084,13 @@ px_loop(uint8_t *buf, uint8_t len)
  gpib_talk();
  set_ren(0);
  gpib_state = 0;
-
  while(1) {
   uint16_t cmdarg;
   char *cmd = (char*)buf+cmd_start;
   len = bufpos - cmd_start;
   if(px_cmd_cmp(PSTR("ver"), cmd, len)) {
-   printf_P(PSTR("GPIB\r\n"));
+#define MKSTR(x) #x
+   printf_P(PSTR("GPIB HP3478EXT " MKSTR(HP3478EXT_VERSION) "\r\n"));
   } else if(px_cmd_cmp_1arg(PSTR("addr"), cmd, len, &cmdarg)) {
    gpib_hp3478_addr = cmdarg;
    /* NOTE: gpib_state assumed to be 0 here */
