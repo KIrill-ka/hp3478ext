@@ -131,7 +131,7 @@
  3   | DIO3  | Data bit 3         | Talker     | PD4   2 | 4
  4   | DIO4  | Data bit 4         | Talker     | PD5   9 | 5
  5   | EOI   | End Of Identity    | Talker     | PB3  15 | 11
- 6   | DAV   | Data Valid         | Controller | PB4  16 | 12
+ 6   | DAV   | Data Valid         | Talker     | PB4  16 | 12
  7   | NRFD  | Not Ready For Data | Listener   | PC0  23 | A0
  8   | NDAC  | No Data Accepted   | Listener   | PC1  24 | A1
  9   | IFC   | Interface Clear    | Controller | PC2  25 | A2
@@ -210,7 +210,7 @@ static inline void set_atn(uint8_t x) {
  SET_PORT_PIN(DDR(ATN_PORT), ATN, (x));
  if(x) _delay_us(0.5); /* T7 in ieee488 spec */
 }
-static inline void set_ren(x) {SET_PORT_PIN(DDR(REN_PORT), REN, (x));}
+static inline void set_ren(uint8_t x) {SET_PORT_PIN(DDR(REN_PORT), REN, (x));}
 
 static inline uint8_t dav(void) {return !(PIN(DAV_PORT) & DAV);}
 static inline uint8_t ndac(void) {return !(PIN(NDAC_PORT) & NDAC);}
@@ -2433,7 +2433,10 @@ hp3478_autohold_process(uint8_t locked, uint8_t sb)
 #endif
    minmax_max = minmax_min;
    ahld_n_stable = 0;
-   if(!hp3478_display_reading(&minmax_min, st, '=', 0)) return AHLD_ERROR;
+   if(!hp3478_display_reading(&minmax_min, st, '=', 0)) {
+    L3_ERRCODE(31);
+    return AHLD_ERROR;
+   }
    return AHLD_LOCK;
   }
   ahld_n_stable = nstab;
@@ -2608,6 +2611,11 @@ hp3478a_handler(uint8_t ev)
                   hp3478_cmd_P(PSTR("M00D1T1"), 0);
                   break;
          
+          case HP3478_INIT:
+                  /* It's either not initialized yet or there's some communication error.
+                     There's no point in trying to reconfigure. */
+                  break;
+
           case HP3478_DIOD:
           case HP3478_CONT:
                   hp3478_cont_fini();
@@ -2690,18 +2698,30 @@ hp3478a_handler(uint8_t ev)
  switch(state) {
          case HP3478_RSET:
          case HP3478_INIT:
-                 if(!hp3478_get_srq_status(&sb)) return 2000; /* retry initialization after 2 sec */
-                 if(!hp3478_cmd_P(PSTR("KM20"), 0)) return 2000;
+                 if(!hp3478_get_srq_status(&sb)) {
+                     L4_ERRCODE(47);
+                     return 2000; /* retry initialization after 2 sec */
+                 }
+                 if(!hp3478_cmd_P(PSTR("KM20"), 0)) {
+                     L4_ERRCODE(48);
+                     return 2000;
+                 }
                  printf_P(PSTR("init: ok\r\n"));
                  if(errcode|errcode2|errcode3|errcode4) {
-                    if(!hp3478_display_err()) return 2000;
+                    if(!hp3478_display_err()) {
+                     L4_ERRCODE(49);
+                     return 2000;
+                    }
                     errcode = 0;
                     errcode2 = 0;
                     errcode3 = 0;
                     errcode4 = 0;
                  } else if((sb & HP3478_SB_PWRSRQ) != 0 || state == HP3478_RSET) {
                   if(hp3478_init_mode) 
-                   hp3478_set_mode(hp3478_init_mode & 0xff, hp3478_init_mode >> 8);
+                   if(!hp3478_set_mode(hp3478_init_mode & 0xff, hp3478_init_mode >> 8)) {
+                    L4_ERRCODE(50);
+                    return 2000;
+                   }
                   menu_pos = load_ext_mode(); 
                   if(menu_pos) {
                    hp3478_menu_pos = menu_pos;
@@ -3089,7 +3109,8 @@ px_loop(uint8_t *buf, uint8_t len)
   char *cmd = (char*)buf+cmd_start;
   len = bufpos - cmd_start;
   if(px_cmd_cmp(PSTR("ver"), cmd, len)) {
-#define MKSTR(x) #x
+#define MKSTR1(x) #x
+#define MKSTR(x) MKSTR1(x)
    printf_P(PSTR("GPIB HP3478EXT " MKSTR(HP3478EXT_VERSION) "\r\n"));
   } else if(px_cmd_cmp_1arg(PSTR("addr"), cmd, len, &cmdarg)) {
    gpib_hp3478_addr = cmdarg;
@@ -3192,7 +3213,12 @@ void main(void)
   PORT(SRQ_PORT) |= SRQ;
   gpib_talk();
 
-  ext_state = !hp3478_ext_enable;
+  ext_state = 1; /* if !hp3478_ext_enable this will cause EV_EXT_DISABLE event */
+  if(hp3478_ext_enable) {
+    gpib_srq_interrupt = 1; /* check if the power-on SRQ is already active */
+    timeout_ts = 250; /* 250 ms delay before the first attempt to 
+                         query the hp3478 */
+  }
 #if 0
   beep(buzz_period, buzz_duty);
   for(timeout = 0; timeout < 5000; timeout++) _delay_ms(1);
