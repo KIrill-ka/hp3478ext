@@ -284,6 +284,7 @@ static uint8_t hp3478_ext_enable;
 static uint16_t hp3478_init_mode;
 #define INIT_EXT_MODE_MAX 14
 static uint8_t hp3478_init_ext_mode;
+static uint8_t hp3478_disp_err_en;
 
 static uint8_t uart_echo;
 static uint8_t uart_baud;
@@ -877,7 +878,10 @@ const struct opt_info PROGMEM opts[] = {
   .addr = &cont_buzz_d1,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_D1},
  {.name = "cont_beep_db",
   .max = 127,   .def = EEP_DEF0_CONT_BEEP_D2,
-  .addr = &cont_buzz_d2,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_D2}
+  .addr = &cont_buzz_d2,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_D2},
+ {.name = "err_disp",
+  .max = 1,     .def = EEP_DEF0_ERR_DISP,
+  .addr = &hp3478_disp_err_en,   .addr_eep = (void*)EEP_ADDR_ERR_DISP}
 };
 
 static uint8_t 
@@ -2698,6 +2702,9 @@ hp3478a_handler(uint8_t ev)
  switch(state) {
          case HP3478_RSET:
          case HP3478_INIT:
+                 if(errcode|errcode2|errcode3|errcode4)
+                   printf_P(PSTR("E:%02X%02X%02X%02X\r\n"), errcode4, errcode3, errcode2, errcode);
+
                  if(!hp3478_get_srq_status(&sb)) {
                      L4_ERRCODE(47);
                      return 2000; /* retry initialization after 2 sec */
@@ -2706,27 +2713,38 @@ hp3478a_handler(uint8_t ev)
                      L4_ERRCODE(48);
                      return 2000;
                  }
-                 printf_P(PSTR("init: ok\r\n"));
-                 if(errcode|errcode2|errcode3|errcode4) {
+                 
+                 {
+                  uint8_t err_displayed = 0;
+
+                  if(errcode|errcode2|errcode3|errcode4) {
+                   if(hp3478_disp_err_en) {
                     if(!hp3478_display_err()) {
                      L4_ERRCODE(49);
                      return 2000;
                     }
-                    errcode = 0;
-                    errcode2 = 0;
-                    errcode3 = 0;
-                    errcode4 = 0;
-                 } else if((sb & HP3478_SB_PWRSRQ) != 0 || state == HP3478_RSET) {
-                  if(hp3478_init_mode) 
-                   if(!hp3478_set_mode(hp3478_init_mode & 0xff, hp3478_init_mode >> 8)) {
-                    L4_ERRCODE(50);
-                    return 2000;
+                    err_displayed = 1;
                    }
-                  menu_pos = load_ext_mode(); 
-                  if(menu_pos) {
-                   hp3478_menu_pos = menu_pos;
-                   state = HP3478_GOTO;
-                   return 1;
+                   errcode = 0;
+                   errcode2 = 0;
+                   errcode3 = 0;
+                   errcode4 = 0;
+                  } 
+
+                  printf_P(PSTR("init: ok\r\n"));
+                  
+                  if(((sb & HP3478_SB_PWRSRQ) != 0 || state == HP3478_RSET) && !err_displayed) {
+                   if(hp3478_init_mode) 
+                    if(!hp3478_set_mode(hp3478_init_mode & 0xff, hp3478_init_mode >> 8)) {
+                     L4_ERRCODE(50);
+                     return 2000;
+                    }
+                   menu_pos = load_ext_mode(); 
+                   if(menu_pos) {
+                    hp3478_menu_pos = menu_pos;
+                    state = HP3478_GOTO;
+                    return 1;
+                   }
                   }
                  }
                  hp3478_menu_pos = 0;
