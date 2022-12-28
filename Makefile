@@ -38,6 +38,9 @@ $(NAME)-dc-buzzer.eep: eepmap.h
 $(NAME).eep: eepmap.h
 	./eeprom_set_var.tcl -d DEF1 $@
 
+uart.o: uart.h
+$(NAME).o: uart.h version.h eepmap.h
+
 OBJS = $(NAME).o uart.o
 
 $(NAME).out: $(OBJS)
