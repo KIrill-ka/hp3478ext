@@ -135,3 +135,9 @@ uart_rx(void)
   rx_rp = next;
   return b;
 }
+
+uint8_t 
+uart_peek(void)
+{
+  return rx_ring[rx_rp];
+}

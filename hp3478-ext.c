@@ -748,7 +748,8 @@ line_edit(uint8_t c, uint8_t *buf, uint8_t *len)
                    if(!uart_echo) break;
                    state = LNEDIT_ESC;
                    break;
-          case 10: break; /* LF */
+          case 10: if(!cmdlen) break; /* ignore odd LF so not to treat CR+LF as two
+                                         line terminators */
           case 13:
                    if (uart_echo) {
                     uart_tx(13); /* CR */
@@ -3092,6 +3093,14 @@ px_read(uint8_t *buf, uint8_t buf_sz, uint8_t end_flags, uint16_t timeout)
   uint8_t r = gpib_receive(buf, buf_sz, &rl, end_flags);
   for(i = 0; i < rl; i++) uart_tx(buf[i]);
   if(r == GPIB_END_EOI) break;
+  if(!uart_rx_empty()) {
+   uint8_t ch = uart_peek();
+   if(ch != '\r' && ch != '\n') break;
+   else (void)uart_rx(); /* Don't interrupt read if we got an empty string.
+                            This may happen if we receive ++read<CR><LF>
+                            I don't know if <CR><LF> support is needed, but
+                            handling like this seems to be logical. */
+  }
   if(rl == 0) {
    if(t <= GPIB_MAX_RECEIVE_TIMEOUT_mS) break;
    t -= GPIB_MAX_RECEIVE_TIMEOUT_mS;
@@ -3188,6 +3197,7 @@ px_loop(uint8_t *buf, uint8_t len)
      hp3478_cmd(buf, bufpos, tx_term|HP3478_CMD_REMOTE);
     }
     bufpos = 0;
+    continue;
    }
    buf[bufpos++] = ch;
   }
