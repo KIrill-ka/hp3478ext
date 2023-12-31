@@ -32,8 +32,6 @@
  - Display 0 with O?
  - Implement unbuffered binary write TUD using escape-sequence as stop
  - Implement unbuffered binary read TUD using escape-sequence as stop
- - Save & restore "ext" functions using presets.
- - Add dBm measurements in ACV.
  */
 
 /* 
@@ -300,6 +298,8 @@ static uint8_t cont_buzz_d1;
 static uint8_t cont_buzz_d2;
 static uint8_t cont_latch;
 static uint8_t cont_range;
+
+static uint16_t dbm_ref;
 
 volatile uint16_t msec_count;
 
@@ -880,6 +880,9 @@ const struct opt_info PROGMEM opts[] = {
  {.name = "cont_beep_db",
   .max = 127,   .def = EEP_DEF0_CONT_BEEP_D2,
   .addr = &cont_buzz_d2,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_D2},
+ {.name = "dbm_ref",
+  .max = 10000,   .def = EEP_DEF0_CONT_BEEP_D2, .flags = OPT_INFO_W16,
+  .addr = &dbm_ref,         .addr_eep = (void*)EEP_ADDR_DBM_REF},
  {.name = "err_disp",
   .max = 1,     .def = EEP_DEF0_ERR_DISP,
   .addr = &hp3478_disp_err_en,   .addr_eep = (void*)EEP_ADDR_ERR_DISP}
@@ -1608,6 +1611,7 @@ display_units:
  display[i++] = exp_char;
  if(mode_ind == 'd') m = PSTR("V  ");
  else if(mode_ind == 'c') m = PSTR("C  ");
+ else if(mode_ind == 'p') m = PSTR("DBM");
  else switch(f) {
          case HP3478_ST_FUNC_DCV: m = PSTR("VDC"); break;
          case HP3478_ST_FUNC_ACV: m = PSTR("VAC"); break;
@@ -1704,6 +1708,10 @@ static uint8_t hp3478_menu_prev_pos; /* previous ext function for PRESET->SAVE *
 #define HP3478_MENU_PRESET_SAVE2 25
 #define HP3478_MENU_PRESET_SAVE3 26
 #define HP3478_MENU_PRESET_SAVE4 27
+#define HP3478_MENU_ACV_MINMAX   28
+#define HP3478_MENU_ACV_AUTOHOLD 29
+#define HP3478_MENU_DBM          30
+//#define HP3478_MENU_DBM_REF      31
 
 static uint8_t hp3478_btn_detect_stage;
 
@@ -1725,6 +1733,10 @@ hp3478_menu_next(uint8_t pos)
                  return HP3478_MENU_OHM_MINMAX;
          case HP3478_MENU_OHM_MINMAX:
                  return HP3478_MENU_TEMP;
+         case HP3478_MENU_ACV_AUTOHOLD:
+                 return HP3478_MENU_ACV_MINMAX;
+         case HP3478_MENU_ACV_MINMAX:
+                 return HP3478_MENU_DBM;
          case HP3478_MENU_AUTOHOLD:
                  return HP3478_MENU_MINMAX;
          case HP3478_MENU_TEMP:
@@ -1764,15 +1776,18 @@ hp3478_menu_show(uint8_t pos)
  const char *s;
  switch(pos) {
          case HP3478_MENU_OHM_MINMAX:
+         case HP3478_MENU_ACV_MINMAX:
          case HP3478_MENU_MINMAX: s = PSTR("M: MINMAX"); break;
          case HP3478_MENU_XOHM_BEEP:
          case HP3478_MENU_BEEP: s = PSTR("M: CONT"); break;
          case HP3478_MENU_XOHM: s = PSTR("M: XOHM"); break;
          case HP3478_MENU_OHM_AUTOHOLD:
+         case HP3478_MENU_ACV_AUTOHOLD:
          case HP3478_MENU_AUTOHOLD: s = PSTR("M: AUTOHOLD"); break;
          case HP3478_MENU_XOHM_DIODE:
          case HP3478_MENU_DIODE: s = PSTR("M: DIODE"); break;
          case HP3478_MENU_TEMP: s = PSTR("M: TEMP"); break;
+         case HP3478_MENU_DBM: s = PSTR("M: DBM"); break;
          case HP3478_MENU_PRESET: s = PSTR("M: PRESET"); break;
          case HP3478_MENU_PRESET_SAVE: s = PSTR("P: SAVE"); break;
          case HP3478_MENU_PRESET_SAVE0: s = PSTR("S: SAVE0"); break;
@@ -1987,6 +2002,7 @@ hp3478_temp_init(void)
  return 1;
 }
 
+
 static uint8_t 
 hp3478_temp_handle_data(struct hp3478_reading *reading)
 {
@@ -2023,6 +2039,47 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
  }
  return 1; 
 }
+
+static uint8_t 
+hp3478_dbm_init(void)
+{
+ return hp3478_temp_init(); /* the initalization for temp and dbm is the same */
+}
+
+static uint8_t 
+hp3478_dbm_handle_data(struct hp3478_reading *reading)
+{
+ if(reading->exp == 9 || reading->value == 0) {
+  if(minmax_state) {
+   minmax_state = 0;
+   if(!hp3478_display_P(PSTR("  OVLD   DBM"), HP3478_DISP_HIDE_ANNUNCIATORS)) {
+    L3_ERRCODE(6); // FIXME
+    return 0;
+   }
+  }
+  return 1;
+ }
+ minmax_state = 1;
+ { 
+  uint8_t i;
+  double db, p, r = reading->value;
+  //printf_P(PSTR("dbm rdg: r=%ld d=%d e=%d\r\n"), reading->value, reading->dot, reading->exp);
+  for(i = 6-reading->dot-reading->exp; i != 0; i--) r /= 10; /* convert to V */
+  p = r*r/dbm_ref*1e3;
+  db = 10*log10(p);
+  //printf_P(PSTR("dbm rdg: p=%ld db=%ld\r\n"), (uint32_t)(p*1e6), (uint32_t)db);
+  /* the expected range is ~ -253 to 183 dBm */
+  reading->value = db*1000;
+  reading->exp = 0;
+  reading->dot = 3;
+ }
+ if(!hp3478_display_reading(reading, hp3478_saved_state[0] /* for N_DIGITS */, 'p', 0)) {
+  L3_ERRCODE(7); //FIXME
+  return 0;
+ }
+ return 1;
+}
+
 
 static uint8_t 
 hp3478_set_mode(uint8_t s1, uint8_t s2)
@@ -2534,11 +2591,14 @@ load_ext_mode(void)
          case HP3478_MENU_TEMP:
          case HP3478_MENU_AUTOHOLD:
          case HP3478_MENU_OHM_AUTOHOLD:
+         case HP3478_MENU_ACV_AUTOHOLD:
          case HP3478_MENU_BEEP:
          case HP3478_MENU_XOHM_BEEP:
          case HP3478_MENU_MINMAX:
          case HP3478_MENU_OHM_MINMAX:
+         case HP3478_MENU_ACV_MINMAX:
          /* case HP3478_MENU_XOHM: */
+         /* TODO: DBM? */
           return i;
          default:
           return 0;
@@ -2594,8 +2654,9 @@ hp3478a_handler(uint8_t ev)
 #define HP3478_AHLL   11 
 #define HP3478_DIOD   12 
 #define HP3478_TEMP   13 
-#define HP3478_GOTO   14
-#define HP3478_RSET   15
+#define HP3478_DBM    14 
+#define HP3478_GOTO   15
+#define HP3478_RSET   16
 
  static uint8_t state = HP3478_INIT;
  uint8_t sb;
@@ -2682,6 +2743,8 @@ hp3478a_handler(uint8_t ev)
                    else p = HP3478_MENU_BEEP;
                   } else  if((st[0] & HP3478_ST_FUNC) == HP3478_ST_FUNC_XOHM) {
                    p = HP3478_MENU_XOHM;
+                  } else if((st[0] & HP3478_ST_FUNC) == HP3478_ST_FUNC_ACV) {
+                   p = HP3478_MENU_ACV_AUTOHOLD;
                   } else p = HP3478_MENU_AUTOHOLD;
                   if(!hp3478_submenu_init(p)) HP3478_REINIT_ERR(44);
                  }
@@ -2782,12 +2845,14 @@ hp3478a_handler(uint8_t ev)
                                                  return 0xffff;
                          case HP3478_MENU_MINMAX: 
                          case HP3478_MENU_OHM_MINMAX: 
+                         case HP3478_MENU_ACV_MINMAX: 
                                                  state = HP3478_MMAX;
                                                  printf_P(PSTR("menu: minmax\r\n"));
                                                  if(!hp3478_minmax_init()) HP3478_REINIT;
                                                  return 0xffff;
                          case HP3478_MENU_AUTOHOLD: 
                          case HP3478_MENU_OHM_AUTOHOLD: 
+                         case HP3478_MENU_ACV_AUTOHOLD: 
                                                  state = HP3478_AHLD;
                                                  printf_P(PSTR("menu: autohold\r\n"));
                                                  if(!hp3478_autohold_init()) HP3478_REINIT_ERR(17);
@@ -2802,6 +2867,11 @@ hp3478a_handler(uint8_t ev)
                                                  state = HP3478_TEMP;
                                                  printf_P(PSTR("menu: temp\r\n"));
                                                  if(!hp3478_temp_init()) HP3478_REINIT;
+                                                 return 0xffff;
+                         case HP3478_MENU_DBM: 
+                                                 state = HP3478_DBM;
+                                                 printf_P(PSTR("menu: dBm\r\n"));
+                                                 if(!hp3478_dbm_init()) HP3478_REINIT;
                                                  return 0xffff;
                          case HP3478_MENU_DONE: 
                                                  state = HP3478_IDLE;
@@ -2909,6 +2979,14 @@ hp3478a_handler(uint8_t ev)
                   if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(24);
                   if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT_ERR(25);
                   if(!hp3478_temp_handle_data(&reading)) HP3478_REINIT;
+                  return 0xffff;
+                }
+                return 0xffff;
+         case HP3478_DBM:
+                if(sb & HP3478_SB_DREADY) {
+                  if(!hp3478_get_reading(&reading, HP3478_CMD_LISTEN)) HP3478_REINIT_ERR(24);
+                  if(!hp3478_cmd_P(PSTR("K"), HP3478_CMD_CONT)) HP3478_REINIT_ERR(25);
+                  if(!hp3478_dbm_handle_data(&reading)) HP3478_REINIT;
                   return 0xffff;
                 }
                 return 0xffff;

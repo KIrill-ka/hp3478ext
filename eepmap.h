@@ -22,6 +22,7 @@
 #define EEP_ADDR_CONT_BEEP_D2    44
 #define EEP_ADDR_CONT_BEEP_P1    48 /* 2 */
 #define EEP_ADDR_CONT_BEEP_P2    52 /* 2 */
+#define EEP_ADDR_DBM_REF         56 /* 2 */
 
 #define EEP_ADDR_MODE            60 /* 2 */
 #define EEP_ADDR_EXT_MODE        62
@@ -59,6 +60,7 @@
 #define EEP_DEF0_CONT_BEEP_D2    15
 #define EEP_DEF0_CONT_BEEP_P1    10000
 #define EEP_DEF0_CONT_BEEP_P2    10000
+#define EEP_DEF0_DBM_REF         50
 #define EEP_DEF0_MODE            0
 #define EEP_DEF0_EXT_MODE        0
 #define EEP_DEF0_ERR_DISP        1
