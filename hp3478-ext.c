@@ -2008,8 +2008,9 @@ hp3478_temp_init(void)
   return 0;
  }
  hp3478_saved_state[0] = s[0];
- /* hp3478_saved_state[1] = s[1]; */
- if(!hp3478_cmd_P(PSTR("M21"), 0)) {
+ hp3478_saved_state[1] = s[1];
+ /* use 30K range so current is 0.1 mA */
+ if(!hp3478_cmd_P(PSTR("R4M21"), 0)) {
   L3_ERRCODE(9);
   return 0;
  }
@@ -2021,6 +2022,7 @@ hp3478_temp_init(void)
 static uint8_t 
 hp3478_temp_handle_data(struct hp3478_reading *reading)
 {
+ uint8_t s;
  if(reading->exp == 9) {
   if(minmax_state) {
    minmax_state = 0;
@@ -2032,7 +2034,6 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
   return 1;
  }
  minmax_state = 1;
-//FIXME: measuer @ 30K range so current is 0.1 mA
 #define RTD_A 3.908e-3 /* equivalent to 3.850e-3 if not using B & C */
 #define RTD_B -5.8019e-7
 #define RTD_C -4.2735e-12
@@ -2049,7 +2050,13 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
   reading->exp = 0;
   reading->dot = 3;
  }
- if(!hp3478_display_reading(reading, hp3478_saved_state[0], 'c', 0)) {
+ s = hp3478_saved_state[0];
+ s = (s & HP3478_ST_N_DIGITS)+1; /* if we use dot=4 and *100 above, the reading format is 0000.00
+                                    trim the last meaningless digit by decreasing N_DIGITS instead, 
+                                    so the format is 000.00 */
+ if(s > HP3478_ST_N_DIGITS3) s = HP3478_ST_N_DIGITS3; /* 3 digit range is not useful, 
+                                                         maybe adjust to 4 digits in temp_init */
+ if(!hp3478_display_reading(reading, s, 'c', 0)) {
   L3_ERRCODE(11);
   return 0; 
  }
@@ -2742,6 +2749,7 @@ hp3478a_handler(uint8_t ev)
 
           case HP3478_DIOD:
           case HP3478_CONT:
+          case HP3478_TEMP:
                   hp3478_cont_fini();
           default:
                   hp3478_cmd_P(PSTR("M00D1"), 0);
@@ -2811,6 +2819,7 @@ hp3478a_handler(uint8_t ev)
 
           case HP3478_CONT:
           case HP3478_DIOD:
+          case HP3478_TEMP:
                   if(!hp3478_cont_fini()) HP3478_REINIT_ERR(13);
 
           default:
