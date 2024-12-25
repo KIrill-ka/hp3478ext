@@ -280,7 +280,7 @@ static enum led_mode led_state = LED_OFF;
 
 static uint8_t hp3478_ext_enable;
 static uint16_t hp3478_init_mode;
-#define INIT_EXT_MODE_MAX 14
+#define INIT_EXT_MODE_MAX 21
 static uint8_t hp3478_init_ext_mode;
 static uint8_t hp3478_disp_err_en;
 
@@ -1681,37 +1681,40 @@ hp3478_rel_handle_data(struct hp3478_reading *r)
 static uint8_t hp3478_menu_timeout;
 static uint8_t hp3478_menu_pos;
 static uint8_t hp3478_menu_prev_pos; /* previous ext function for PRESET->SAVE */
-#define HP3478_MENU_ERROR   1
-#define HP3478_MENU_DONE    2
-#define HP3478_MENU_NOP     3
-#define HP3478_MENU_WAIT    4
-#define HP3478_MENU_XOHM    5
-#define HP3478_MENU_BEEP    6 /* continuity test */
-#define HP3478_MENU_XOHM_BEEP   7 /* continuity test, different menu path */
-#define HP3478_MENU_MINMAX  8
-#define HP3478_MENU_AUTOHOLD 9
-#define HP3478_MENU_OHM_MINMAX  10
+#define HP3478_MENU_ERROR        1
+#define HP3478_MENU_DONE         2
+#define HP3478_MENU_NOP          3
+#define HP3478_MENU_WAIT         4
+#define HP3478_MENU_XOHM         5
+#define HP3478_MENU_BEEP         6 /* continuity test */
+#define HP3478_MENU_XOHM_BEEP    7 /* continuity test, different menu path */
+#define HP3478_MENU_MINMAX       8
+#define HP3478_MENU_AUTOHOLD     9
+#define HP3478_MENU_OHM_MINMAX   10
 #define HP3478_MENU_OHM_AUTOHOLD 11
-#define HP3478_MENU_TEMP 12
-#define HP3478_MENU_DIODE 13
-#define HP3478_MENU_XOHM_DIODE 14 /* = INIT_EXT_MODE_MAX */
-#define HP3478_MENU_PRESET 15
-/*#define HP3478_MENU_PRESET_LOAD 16*/
-#define HP3478_MENU_PRESET_LOAD0 17
-#define HP3478_MENU_PRESET_LOAD1 18
-#define HP3478_MENU_PRESET_LOAD2 19
-#define HP3478_MENU_PRESET_LOAD3 20
-#define HP3478_MENU_PRESET_LOAD4 21
-#define HP3478_MENU_PRESET_SAVE 22
-#define HP3478_MENU_PRESET_SAVE0 23
-#define HP3478_MENU_PRESET_SAVE1 24
-#define HP3478_MENU_PRESET_SAVE2 25
-#define HP3478_MENU_PRESET_SAVE3 26
-#define HP3478_MENU_PRESET_SAVE4 27
-#define HP3478_MENU_ACV_MINMAX   28
-#define HP3478_MENU_ACV_AUTOHOLD 29
-#define HP3478_MENU_DBM          30
-//#define HP3478_MENU_DBM_REF      31
+#define HP3478_MENU_TEMP         12
+#define HP3478_MENU_DIODE        13
+#define HP3478_MENU_XOHM_DIODE   14
+#define HP3478_MENU_ACV_MINMAX   15
+#define HP3478_MENU_ACV_AUTOHOLD 16
+#define HP3478_MENU_DBM          17
+#define HP3478_MENU_DBM_REF      18
+#define HP3478_MENU_DBM_REF50    19
+#define HP3478_MENU_DBM_REF100   20
+#define HP3478_MENU_DBM_REF600   21 /* = INIT_EXT_MODE_MAX */
+#define HP3478_MENU_PRESET       22
+/*#define HP3478_MENU_PRESET_LOAD 23*/
+#define HP3478_MENU_PRESET_LOAD0 24
+#define HP3478_MENU_PRESET_LOAD1 25
+#define HP3478_MENU_PRESET_LOAD2 26
+#define HP3478_MENU_PRESET_LOAD3 27
+#define HP3478_MENU_PRESET_LOAD4 28
+#define HP3478_MENU_PRESET_SAVE  29
+#define HP3478_MENU_PRESET_SAVE0 30
+#define HP3478_MENU_PRESET_SAVE1 31
+#define HP3478_MENU_PRESET_SAVE2 32
+#define HP3478_MENU_PRESET_SAVE3 33
+#define HP3478_MENU_PRESET_SAVE4 34
 
 static uint8_t hp3478_btn_detect_stage;
 
@@ -1739,6 +1742,7 @@ hp3478_menu_next(uint8_t pos)
                  return HP3478_MENU_DBM;
          case HP3478_MENU_AUTOHOLD:
                  return HP3478_MENU_MINMAX;
+         case HP3478_MENU_DBM:
          case HP3478_MENU_TEMP:
          case HP3478_MENU_MINMAX:
                  return HP3478_MENU_PRESET;
@@ -1766,6 +1770,14 @@ hp3478_menu_next(uint8_t pos)
                  return HP3478_MENU_PRESET_SAVE3;
          case HP3478_MENU_PRESET_SAVE3:
                  return HP3478_MENU_PRESET_SAVE4;
+         case HP3478_MENU_DBM_REF:
+                 return HP3478_MENU_DBM_REF50;
+         case HP3478_MENU_DBM_REF50:
+                 return HP3478_MENU_DBM_REF100;
+         case HP3478_MENU_DBM_REF100:
+                 return HP3478_MENU_DBM_REF600;
+         case HP3478_MENU_DBM_REF600:
+                 return HP3478_MENU_DBM_REF50;
  }
  return HP3478_MENU_DONE;
 }
@@ -1801,6 +1813,9 @@ hp3478_menu_show(uint8_t pos)
          case HP3478_MENU_PRESET_LOAD2: s = PSTR("L: LOAD2"); break;
          case HP3478_MENU_PRESET_LOAD3: s = PSTR("L: LOAD3"); break;
          case HP3478_MENU_PRESET_LOAD4: s = PSTR("L: LOAD4"); break;
+         case HP3478_MENU_DBM_REF50:  s = PSTR("R:    50"); break;
+         case HP3478_MENU_DBM_REF100: s = PSTR("R:   100"); break;
+         case HP3478_MENU_DBM_REF600: s = PSTR("R:   600"); break;
  }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
@@ -2017,7 +2032,8 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
   return 1;
  }
  minmax_state = 1;
-#define RTD_A 3.908e-3
+//FIXME: measuer @ 30K range so current is 0.1 mA
+#define RTD_A 3.908e-3 /* equivalent to 3.850e-3 if not using B & C */
 #define RTD_B -5.8019e-7
 #define RTD_C -4.2735e-12
 #define RTD_R0 1000.0
@@ -2041,6 +2057,42 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
 }
 
 static uint8_t 
+hp3478_dbm_submenu_init(void)
+{
+ uint8_t pos;
+ int8_t i;
+ uint16_t r = dbm_ref;
+ char display[8]; /* R: 00000 */
+ switch(r) {
+         case 50: pos = HP3478_MENU_DBM_REF50; break;
+         case 100: pos = HP3478_MENU_DBM_REF100; break;
+         case 600: pos = HP3478_MENU_DBM_REF600; break;
+         default: pos = HP3478_MENU_DBM_REF;
+ }
+ hp3478_menu_timeout = 0;
+ hp3478_menu_pos = pos;
+ display[0] = 'R';
+ display[1] = ':';
+ for(i = 7; i != 1; i--) {
+   if(!r) display[i] = ' ';
+   else {
+     display[i] = r%10+'0';
+     r /= 10;
+   }
+ }
+
+ if(!hp3478_display(display, sizeof(display),  HP3478_DISP_HIDE_ANNUNCIATORS|HP3478_CMD_CONT)) {
+  L3_ERRCODE(62);
+  return 0;
+ }
+ if(!hp3478_menu_restart_btn_detect()) {
+  L3_ERRCODE(63);
+  return 0;
+ }
+ return 1;
+}
+
+static uint8_t 
 hp3478_dbm_init(void)
 {
  return hp3478_temp_init(); /* the initalization for temp and dbm is the same */
@@ -2053,7 +2105,7 @@ hp3478_dbm_handle_data(struct hp3478_reading *reading)
   if(minmax_state) {
    minmax_state = 0;
    if(!hp3478_display_P(PSTR("  OVLD   DBM"), HP3478_DISP_HIDE_ANNUNCIATORS)) {
-    L3_ERRCODE(6); // FIXME
+    L3_ERRCODE(32);
     return 0;
    }
   }
@@ -2063,7 +2115,7 @@ hp3478_dbm_handle_data(struct hp3478_reading *reading)
  { 
   uint8_t i;
   double db, p, r = reading->value;
-  //printf_P(PSTR("dbm rdg: r=%ld d=%d e=%d\r\n"), reading->value, reading->dot, reading->exp);
+  printf_P(PSTR("dbm rdg: r=%ld d=%d e=%d\r\n"), reading->value, reading->dot, reading->exp);
   for(i = 6-reading->dot-reading->exp; i != 0; i--) r /= 10; /* convert to V */
   p = r*r/dbm_ref*1e3;
   db = 10*log10(p);
@@ -2073,8 +2125,8 @@ hp3478_dbm_handle_data(struct hp3478_reading *reading)
   reading->exp = 0;
   reading->dot = 3;
  }
- if(!hp3478_display_reading(reading, hp3478_saved_state[0] /* for N_DIGITS */, 'p', 0)) {
-  L3_ERRCODE(7); //FIXME
+ if(!hp3478_display_reading(reading, hp3478_saved_state[0] /* for N_DIGITS */, 'p', HP3478_DISP_HIDE_ANNUNCIATORS)) {
+  L3_ERRCODE(33);
   return 0;
  }
  return 1;
@@ -2560,10 +2612,13 @@ preset_save(uint8_t num, uint8_t st[5])
  uint16_t s;
  uint8_t include = 0;
  uint8_t i;
- /* TODO: save ext function if menu is activated within 5 sec after exitting ext function */
 
  s = (uint16_t)st[0]+((uint16_t)st[1]<<8);
- if(num == 0) {
+ if(num == 0) { /* This is a bit inconsistent.
+                   Here the intial (RESET) mode is not changed for the preset other than 0.
+                   However preset_load does change these variables.
+                   So after any preset is loaded, the TEST/RESET key will load the mode
+                   saved in that preset. */
   hp3478_init_mode = s;
   hp3478_init_ext_mode = hp3478_menu_prev_pos;
  }
@@ -2597,8 +2652,11 @@ load_ext_mode(void)
          case HP3478_MENU_MINMAX:
          case HP3478_MENU_OHM_MINMAX:
          case HP3478_MENU_ACV_MINMAX:
+         case HP3478_MENU_DBM_REF:
+         case HP3478_MENU_DBM_REF50:
+         case HP3478_MENU_DBM_REF100:
+         case HP3478_MENU_DBM_REF600:
          /* case HP3478_MENU_XOHM: */
-         /* TODO: DBM? */
           return i;
          default:
           return 0;
@@ -2869,6 +2927,16 @@ hp3478a_handler(uint8_t ev)
                                                  if(!hp3478_temp_init()) HP3478_REINIT;
                                                  return 0xffff;
                          case HP3478_MENU_DBM: 
+                                                 if(!hp3478_dbm_submenu_init())
+                                                  HP3478_REINIT_ERR(51);
+                                                 return 100;
+                         case HP3478_MENU_DBM_REF50: 
+                                                 dbm_ref = 50;
+                         case HP3478_MENU_DBM_REF100: 
+                                                 if(menu_pos == HP3478_MENU_DBM_REF100) dbm_ref = 100;
+                         case HP3478_MENU_DBM_REF600: 
+                                                 if(menu_pos == HP3478_MENU_DBM_REF600) dbm_ref = 600;
+                         case HP3478_MENU_DBM_REF: 
                                                  state = HP3478_DBM;
                                                  printf_P(PSTR("menu: dBm\r\n"));
                                                  if(!hp3478_dbm_init()) HP3478_REINIT;
