@@ -13,6 +13,8 @@
 
 #define EEP_ADDR_HP3478_EXT_EN   10
 
+#define EEP_ADDR_TEMP_2W_OFF     16 /* 2 */
+#define EEP_ADDR_TEMP_R0_OFF     18 /* 2 */
 #define EEP_ADDR_CONT_RANGE      20
 #define EEP_ADDR_CONT_THRESHOLD  24
 #define EEP_ADDR_CONT_LATCH      28
@@ -51,6 +53,8 @@
 
 #define EEP_DEF0_HP3478_EXT_EN   0
 
+#define EEP_DEF0_TEMP_2W_OFF     0
+#define EEP_DEF0_TEMP_R0_OFF     0
 #define EEP_DEF0_CONT_RANGE      1  /* 300 Ohm */
 #define EEP_DEF0_CONT_THRESHOLD  1000 /* 100 ohm in 300 Ohm range */
 #define EEP_DEF0_CONT_LATCH      0  /* no latch */

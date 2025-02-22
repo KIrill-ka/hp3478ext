@@ -301,6 +301,9 @@ static uint8_t cont_range;
 
 static uint16_t dbm_ref;
 
+static int16_t temp_2w_off;
+static int16_t temp_r0_off;
+
 volatile uint16_t msec_count;
 
 #define EV_TIMEOUT      1
@@ -881,8 +884,14 @@ const struct opt_info PROGMEM opts[] = {
   .max = 127,   .def = EEP_DEF0_CONT_BEEP_D2,
   .addr = &cont_buzz_d2,         .addr_eep = (void*)EEP_ADDR_CONT_BEEP_D2},
  {.name = "dbm_ref",
-  .max = 10000,   .def = EEP_DEF0_CONT_BEEP_D2, .flags = OPT_INFO_W16,
+  .max = 10000,   .def = EEP_DEF0_DBM_REF, .flags = OPT_INFO_W16,
   .addr = &dbm_ref,         .addr_eep = (void*)EEP_ADDR_DBM_REF},
+ {.name = "temp_r_off",
+  .max = 0xffff,   .def = EEP_DEF0_TEMP_2W_OFF, .flags = OPT_INFO_W16,
+  .addr = &temp_2w_off,         .addr_eep = (void*)EEP_ADDR_TEMP_2W_OFF},
+ {.name = "temp_ro_off",
+  .max = 0xffff,   .def = EEP_DEF0_TEMP_R0_OFF, .flags = OPT_INFO_W16,
+  .addr = &temp_r0_off,         .addr_eep = (void*)EEP_ADDR_TEMP_R0_OFF},
  {.name = "err_disp",
   .max = 1,     .def = EEP_DEF0_ERR_DISP,
   .addr = &hp3478_disp_err_en,   .addr_eep = (void*)EEP_ADDR_ERR_DISP}
@@ -918,7 +927,7 @@ static uint8_t
 get_set_opt(const uint8_t *buf, uint8_t len)
 {
  uint16_t v;
- uint8_t i, w = 0;
+ uint8_t i, flags = 0;
  struct opt_info opt;
 
  if(len == 0) {
@@ -994,14 +1003,19 @@ get_set_opt(const uint8_t *buf, uint8_t len)
   uint8_t c = buf[i];
   
   if(c > '9' || c < '0') {
+   if(c == '-') {
+    flags |= 2;
+    continue;
+   }
    if((c == 'w' || c == 'W') && i == len-1) {
-    w = 1;
+    flags |= 1;
     break;
    }
    printf_P(PSTR("ERROR\r\n"));
    return 0;
   }
-  v = v*10 + (c-'0');
+  if((flags & 2) == 0) v = v*10 + (c-'0');
+  else v = v*10 - (c-'0');
  }
  if(v > opt.max) {
   printf_P(PSTR("ERROR\r\n"));
@@ -1010,10 +1024,10 @@ get_set_opt(const uint8_t *buf, uint8_t len)
 
  if(opt.flags & OPT_INFO_W16) {
   *(uint16_t*)opt.addr = (uint16_t)v;
-  if(w) eeprom_write_word(opt.addr_eep, (uint16_t)v);
+  if(flags&1) eeprom_write_word(opt.addr_eep, (uint16_t)v);
  } else {
   *(uint8_t*)opt.addr = (uint8_t)v;
-  if(w) eeprom_write_byte(opt.addr_eep, (uint8_t)v);
+  if(flags&1) eeprom_write_byte(opt.addr_eep, (uint8_t)v);
  }
  printf_P(PSTR("OK\r\n"));
  return 1;
@@ -1718,6 +1732,19 @@ static uint8_t hp3478_menu_prev_pos; /* previous ext function for PRESET->SAVE *
 
 static uint8_t hp3478_btn_detect_stage;
 
+/* ext_mode_state: MINMAX */
+#define MINMAX_MIN       1
+#define MINMAX_MAX       2
+#define MINMAX_DISP_NONE 0
+#define MINMAX_DISP     12
+#define MINMAX_DISP_MIN  4
+#define MINMAX_DISP_MAX  8
+/* ext_mode_state: AUTOHOLD */
+#define ahld_n_stable ext_mode_state
+/* ext_mode_state: others */
+#define OVERFLOW      1
+static uint8_t ext_mode_state;
+
 static uint8_t 
 hp3478_menu_next(uint8_t pos)
 {
@@ -1958,7 +1985,6 @@ hp3478_xohm_handle_data(struct hp3478_reading *reading)
  return 1;
 }
 
-static uint8_t minmax_state = 0;
 static uint8_t 
 hp3478_diode_init(void)
 {
@@ -1973,7 +1999,7 @@ hp3478_diode_init(void)
   L3_ERRCODE(5);
   return 0;
  }
- minmax_state = 1;
+ ext_mode_state = 0;
  return 1;
 }
 
@@ -1981,8 +2007,8 @@ static uint8_t
 hp3478_diode_handle_data(struct hp3478_reading *reading)
 {
  if(reading->exp == 9) {
-  if(minmax_state) {
-   minmax_state = 0;
+  if(!ext_mode_state) {
+   ext_mode_state = OVERFLOW;
    if(!hp3478_display_P(PSTR("     >3 V"), HP3478_DISP_HIDE_ANNUNCIATORS)) {
     L3_ERRCODE(6);
     return 0;
@@ -1990,7 +2016,7 @@ hp3478_diode_handle_data(struct hp3478_reading *reading)
   }
   return 1;
  }
- minmax_state = 1;
+ ext_mode_state = 0;
  reading->exp = 0;
  if(!hp3478_display_reading(reading, hp3478_saved_state[0], 'd', 0)) {
   L3_ERRCODE(7);
@@ -2014,18 +2040,18 @@ hp3478_temp_init(void)
   L3_ERRCODE(9);
   return 0;
  }
- minmax_state = 1;
+ ext_mode_state = 0;
  return 1;
 }
-
 
 static uint8_t 
 hp3478_temp_handle_data(struct hp3478_reading *reading)
 {
  uint8_t s;
- if(reading->exp == 9) {
-  if(minmax_state) {
-   minmax_state = 0;
+ if(reading->exp == 9 || reading->value < 0) {
+over:
+  if(!ext_mode_state) {
+   ext_mode_state = OVERFLOW;
    if(!hp3478_display_P(PSTR("  OPEN"), HP3478_DISP_HIDE_ANNUNCIATORS)) {
     L3_ERRCODE(10);
     return 0;
@@ -2033,24 +2059,28 @@ hp3478_temp_handle_data(struct hp3478_reading *reading)
   }
   return 1;
  }
- minmax_state = 1;
+ ext_mode_state = 0;
+/* PT1000, alpha = 0.00385 */
 #define RTD_A 3.908e-3 /* equivalent to 3.850e-3 if not using B & C */
 #define RTD_B -5.8019e-7
 #define RTD_C -4.2735e-12
 #define RTD_R0 1000.0
- /* 700-102BAB-B00 HONEYWELL */
+ s = hp3478_saved_state[0];
  { 
   uint8_t i;
   double t, r = reading->value;
-  //printf_P(PSTR("temp: %u->%lu\r\n"), (unsigned)6-reading->dot-reading->exp, reading->value);
+  double r0 = RTD_R0;
+
+  r0 += temp_r0_off/1000.0;
   for(i = 6-reading->dot-reading->exp; i != 0; i--) r /= 10;
-  t = (-(RTD_R0*RTD_A)+sqrt((RTD_R0*RTD_R0*RTD_A*RTD_A) - (4*RTD_R0*RTD_B)*(RTD_R0-r)))/(2*RTD_R0*RTD_B);
+  if(r > 4000) goto over; /* "OPEN" will blink due to ext_mode_sate's already reset, but that's ok */
+  if((s & HP3478_ST_FUNC) == HP3478_ST_FUNC_2WOHM) r += temp_2w_off/1000.0;
+  
+  t = (-(r0*RTD_A)+sqrt(((r0*RTD_A)*(r0*RTD_A)) - (4*(r0*RTD_B))*(r0-r)))/(2*(r0*RTD_B));
   reading->value = t*1000;
-  //printf_P(PSTR("temp: %lu\r\n"), (uint32_t)t);
   reading->exp = 0;
   reading->dot = 3;
  }
- s = hp3478_saved_state[0];
  s = (s & HP3478_ST_N_DIGITS)+1; /* if we use dot=4 and *100 above, the reading format is 0000.00
                                     trim the last meaningless digit by decreasing N_DIGITS instead, 
                                     so the format is 000.00 */
@@ -2099,18 +2129,14 @@ hp3478_dbm_submenu_init(void)
  return 1;
 }
 
-static uint8_t 
-hp3478_dbm_init(void)
-{
- return hp3478_temp_init(); /* the initalization for temp and dbm is the same */
-}
+#define hp3478_dbm_init hp3478_generic_ext_mode_init
 
 static uint8_t 
 hp3478_dbm_handle_data(struct hp3478_reading *reading)
 {
  if(reading->exp == 9 || reading->value == 0) {
-  if(minmax_state) {
-   minmax_state = 0;
+  if(!ext_mode_state) {
+   ext_mode_state = OVERFLOW;
    if(!hp3478_display_P(PSTR("  OVLD   DBM"), HP3478_DISP_HIDE_ANNUNCIATORS)) {
     L3_ERRCODE(32);
     return 0;
@@ -2118,11 +2144,11 @@ hp3478_dbm_handle_data(struct hp3478_reading *reading)
   }
   return 1;
  }
- minmax_state = 1;
+ ext_mode_state = 0;
  { 
   uint8_t i;
   double db, p, r = reading->value;
-  printf_P(PSTR("dbm rdg: r=%ld d=%d e=%d\r\n"), reading->value, reading->dot, reading->exp);
+  //printf_P(PSTR("dbm rdg: r=%ld d=%d e=%d\r\n"), reading->value, reading->dot, reading->exp);
   for(i = 6-reading->dot-reading->exp; i != 0; i--) r /= 10; /* convert to V */
   p = r*r/dbm_ref*1e3;
   db = 10*log10(p);
@@ -2265,16 +2291,8 @@ hp3478_cont_init(void)
  return 1;
 }
 
-#define MINMAX_MIN       1
-#define MINMAX_MAX       2
-#define MINMAX_DISP     12
-#define MINMAX_DISP_NONE 0
-#define MINMAX_DISP_MIN  4
-#define MINMAX_DISP_MAX  8
-static struct hp3478_reading minmax_min;
-static struct hp3478_reading minmax_max;
 static uint8_t 
-hp3478_minmax_init(void)
+hp3478_generic_ext_mode_init(void)
 {
  uint8_t s[5];
  if(!hp3478_get_status(s)) {
@@ -2286,10 +2304,13 @@ hp3478_minmax_init(void)
   L3_ERRCODE(17);
   return 0;
  }
- minmax_state = 0;
+ ext_mode_state = 0;
  return 1;
 }
+#define hp3478_minmax_init hp3478_generic_ext_mode_init
 
+static struct hp3478_reading minmax_min;
+static struct hp3478_reading minmax_max;
 static int8_t 
 hp3478_cmp_readings(const struct hp3478_reading *r1, const struct hp3478_reading *r2)
 {
@@ -2359,7 +2380,7 @@ static uint8_t
 hp3478_minmax_handle_data(struct hp3478_reading *reading)
 {
  uint8_t s, r;
- s = minmax_state;
+ s = ext_mode_state;
 
  r = 0;
  if(reading->exp != 9) {
@@ -2372,20 +2393,20 @@ hp3478_minmax_handle_data(struct hp3478_reading *reading)
    r |= MINMAX_MAX;
   }
  }
- minmax_state = s | r;
+ ext_mode_state = s | r;
  return r;
 }
 
 static uint8_t 
 hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
 {
- uint8_t s = minmax_state;
+ uint8_t s = ext_mode_state;
  struct hp3478_reading d;
 
  switch(s & MINMAX_DISP) {
          case MINMAX_DISP_NONE:
                  if(!key_press) break;
-                 minmax_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MIN;
+                 ext_mode_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MIN;
                  if((s & MINMAX_MIN) == 0) {
                   if(!hp3478_display_P(PSTR("NO MIN"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
                    L3_ERRCODE(18);
@@ -2409,7 +2430,7 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
                   }
                   return 1;
                  }
-                 minmax_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MAX;
+                 ext_mode_state = (s & ~MINMAX_DISP) | MINMAX_DISP_MAX;
                  if((s & MINMAX_MAX) == 0) {
                   if(!hp3478_display_P(PSTR("NO MAX"), HP3478_CMD_CONT|HP3478_DISP_HIDE_ANNUNCIATORS)) {
                    L3_ERRCODE(21);
@@ -2433,7 +2454,7 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
                   }
                   return 1;
                  }
-                 minmax_state = s & ~MINMAX_DISP;
+                 ext_mode_state = s & ~MINMAX_DISP;
                  if(!hp3478_cmd_P(PSTR("D1"), HP3478_CMD_CONT)) {
                   L3_ERRCODE(24);
                   return 0;
@@ -2444,7 +2465,6 @@ hp3478_minmax_display_data(uint8_t r, uint8_t key_press)
  return 1;
 }
 
-static uint8_t ahld_n_stable;
 static uint8_t
 hp3478_autohold_init(void)
 {
@@ -2807,6 +2827,8 @@ hp3478a_handler(uint8_t ev)
                   if((st[0] & HP3478_ST_FUNC) == HP3478_ST_FUNC_2WOHM) {
                    if(reading.exp == 9) p = HP3478_MENU_XOHM_BEEP;
                    else p = HP3478_MENU_BEEP;
+                  } else if((st[0] & HP3478_ST_FUNC) == HP3478_ST_FUNC_4WOHM) {
+                   p = HP3478_MENU_OHM_AUTOHOLD;
                   } else  if((st[0] & HP3478_ST_FUNC) == HP3478_ST_FUNC_XOHM) {
                    p = HP3478_MENU_XOHM;
                   } else if((st[0] & HP3478_ST_FUNC) == HP3478_ST_FUNC_ACV) {
